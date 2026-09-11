@@ -1617,20 +1617,43 @@ def search_web_for_answer(query: str) -> Dict[str, Any]:
             if attempt < retries - 1:
                 time.sleep(backoff_delays[attempt])
 
-    # 3. Process Snippets with Context Length Capping (max 1500 chars total)
+    # 3. Process Snippets with Safety Filter & Context Length Capping (max 1500 chars total)
+    def _extract_source_name(href: str) -> str:
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(href).netloc.lower()
+            if domain.startswith("www."):
+                domain = domain[4:]
+            parts = domain.split(".")
+            if len(parts) >= 2:
+                return parts[0].capitalize()
+            return domain
+        except Exception:
+            return "Web"
+
+    def _is_safe_result(title: str, body: str, href: str) -> bool:
+        combined = f"{title} {body}".lower()
+        blocked_terms = ["porn", "nsfw", "xxx", "warez", "crack", "torrent"]
+        if any(t in combined for t in blocked_terms):
+            return False
+        return True
+
     if raw_results:
         snippets = []
         for i, r in enumerate(raw_results, 1):
             title = (r.get("title") or "").strip()
             body = (r.get("body") or "").strip()
             href = (r.get("href") or "").strip()
+            if not _is_safe_result(title, body, href):
+                continue
             # Truncate individual body snippet to ~320 chars
             if len(body) > 320:
                 body = body[:317] + "..."
             if title or body:
-                snippet_entry = f"[{i}] {title}\nSummary: {body}"
+                source_label = _extract_source_name(href)
+                snippet_entry = f"[{i}] {title} (Source: {source_label})\nSummary: {body}"
                 if href:
-                    snippet_entry += f"\nSource: {href}"
+                    snippet_entry += f"\nLink: {href}"
                 snippets.append(snippet_entry)
 
         if snippets:
@@ -1673,6 +1696,8 @@ def search_web_for_answer(query: str) -> Dict[str, Any]:
             clean_s = re.sub(r'<[^>]+>', '', raw_s)
             clean_s = html.unescape(clean_s).strip()
             if clean_s:
+                if not _is_safe_result("", clean_s, ""):
+                    continue
                 if len(clean_s) > 320:
                     clean_s = clean_s[:317] + "..."
                 clean_snippets.append(f"[{i}] {clean_s}")
@@ -1705,3 +1730,11 @@ def search_web_for_answer(query: str) -> Dict[str, Any]:
         "error": str(last_error or "No results found or rate limited."),
         "results": f"Could not find web search results for '{clean_query}'."
     }
+
+
+async def search_web_for_answer_async(query: str) -> Dict[str, Any]:
+    """
+    Asynchronous non-blocking wrapper for search_web_for_answer using asyncio.to_thread.
+    """
+    import asyncio
+    return await asyncio.to_thread(search_web_for_answer, query)
