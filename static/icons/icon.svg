@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0e1726"/>
+      <stop offset="100%" stop-color="#07090e"/>
+    </radialGradient>
+    <linearGradient id="orbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="50%" stop-color="#4facfe"/>
+      <stop offset="100%" stop-color="#cd919e"/>
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(0, 242, 254, 0.45)"/>
+      <stop offset="60%" stop-color="rgba(79, 172, 254, 0.15)"/>
+      <stop offset="100%" stop-color="rgba(0, 0, 0, 0)"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="16" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)"/>
+
+  <!-- Ambient Glow -->
+  <circle cx="256" cy="256" r="220" fill="url(#glowGrad)"/>
+
+  <!-- Outer Orbital Rings -->
+  <ellipse cx="256" cy="256" rx="190" ry="85" fill="none" stroke="#00f2fe" stroke-width="3" stroke-dasharray="12 8" opacity="0.4" transform="rotate(-25 256 256)"/>
+  <ellipse cx="256" cy="256" rx="160" ry="70" fill="none" stroke="#cd919e" stroke-width="2.5" stroke-dasharray="8 6" opacity="0.35" transform="rotate(35 256 256)"/>
+
+  <!-- Glowing Core Orb -->
+  <circle cx="256" cy="256" r="95" fill="url(#orbGrad)" filter="url(#glow)"/>
+  <circle cx="230" cy="230" r="30" fill="#ffffff" opacity="0.65" filter="url(#glow)"/>
+
+  <!-- Central Astra Star Emblem -->
+  <path d="M256 186 L265 240 L319 249 L272 267 L285 320 L256 280 L227 320 L240 267 L193 249 L247 240 Z" fill="#ffffff" opacity="0.95"/>
+</svg>
+

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Astra - Gemini AI Voice Assistant</title>
+    
+    <!-- PWA Manifest & Mobile Web App Meta -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#07090e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Astra">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="bg-glow"></div>
+
+    <header class="top-nav">
+        <div class="logo">
+            <span class="sparkle">✦</span>
+            <span class="title">ASTRA</span>
+            <span class="badge">GEMINI LIVE</span>
+        </div>
+
+        <div class="header-actions">
+            <!-- Wake Word Ambient Mode Toggle -->
+            <button id="wakeWordToggleBtn" class="wake-word-btn" title="Toggle Hands-Free Wake Word ('Hey Astra')">
+                <span class="pulse-icon">🎙️</span>
+                <span id="wakeWordText">Wake Word: OFF</span>
+            </button>
+
+            <!-- Push & Background Quick-Talk Toggle -->
+            <button id="pushNotificationBtn" class="push-btn" title="Enable Mobile Push & Background Quick-Talk">
+                <span class="bell-icon">🔔</span>
+                <span id="pushNotificationText">Alerts</span>
+            </button>
+
+            <!-- Language Selector -->
+            <div class="lang-selector">
+                <button class="lang-btn active" data-lang="auto">Auto</button>
+                <button class="lang-btn" data-lang="hi-IN">हिन्दी</button>
+                <button class="lang-btn" data-lang="en-IN">English</button>
+            </div>
+
+            <!-- API Key & Status -->
+            <button id="settingsBtn" class="icon-btn" title="Settings / API Key">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="main-stage">
+        <!-- Status Label -->
+        <div class="status-container">
+            <span class="status-dot"></span>
+            <span id="statusText" class="status-text">Click Mic to Speak</span>
+        </div>
+
+        <!-- Animated Gemini Orb with Dusky Pink Ambient Glow -->
+        <div class="orb-container">
+            <div class="orb-pink-glow"></div>
+            <div class="orb-wrapper" id="orbWrapper">
+                <div class="orb-ring ring-3"></div>
+                <div class="orb-ring ring-2"></div>
+                <div class="orb-ring ring-1"></div>
+                <div class="orb-core" id="orbCore">
+                    <div class="orb-inner-light"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Multi-line Transcript History Area with Top Fade-Out Mask -->
+        <div class="transcript-history-container" id="transcriptHistoryContainer">
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-bubble assistant">
+                    <span class="bubble-sender">Astra</span>
+                    <p class="bubble-text" id="assistantReply">"Namaste! Bolo kya open karna hai?"</p>
+                </div>
+            </div>
+            <!-- Live Interim Speech Transcript Indicator -->
+            <div class="live-transcript-wrapper" id="liveTranscriptWrapper">
+                <span class="live-indicator-dot"></span>
+                <p id="liveTranscript" class="live-transcript"></p>
+            </div>
+        </div>
+
+        <!-- Voice-First Interaction Hub & Embedded Text Input -->
+        <div class="interaction-zone">
+            <!-- Prominent Voice-First Microphone Button with Continuous Shimmer -->
+            <div class="control-bar">
+                <button id="micBtn" class="mic-button voice-primary" title="Click to Talk (or press Spacebar)">
+                    <span class="mic-shimmer-ring"></span>
+                    <svg class="mic-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                </button>
+
+                <!-- Instant Interrupt Button (appears when speaking) -->
+                <button id="interruptBtn" class="interrupt-btn hidden" title="Interrupt / Stop Astra (Press Esc or click)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                    </svg>
+                    <span>Interrupt (Esc)</span>
+                </button>
+            </div>
+
+            <!-- Sleek Input Field with Embedded Minimalist Paper Plane Send Icon -->
+            <div class="text-input-container">
+                <form id="textCommandForm" class="text-command-form" onsubmit="return false;">
+                    <input 
+                        type="text" 
+                        id="textCommandInput" 
+                        class="text-command-input" 
+                        placeholder="Ask Astra or type a command..." 
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                    <button type="submit" id="sendTextBtn" class="send-text-btn" title="Send (Enter)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Categorized Suggestion Pills (Decluttered Glassmorphic Rows) -->
+        <div class="categorized-suggestions">
+            <div class="suggestion-category-row">
+                <span class="category-badge">💻 Dev Tools</span>
+                <div class="pills-group">
+                    <button class="suggestion-tag" data-cmd="Dev environment start karo">🚀 Dev Environment</button>
+                    <button class="suggestion-tag" data-cmd="Odoo server status check karo">⚙️ Odoo Server</button>
+                    <button class="suggestion-tag" data-cmd="Notepad kholo">📝 Notepad kholo</button>
+                </div>
+            </div>
+
+            <div class="suggestion-category-row">
+                <span class="category-badge">🛠️ System</span>
+                <div class="pills-group">
+                    <button class="suggestion-tag" data-cmd="Screenshot lo">📸 Screenshot</button>
+                    <button class="suggestion-tag" data-cmd="Volume up karo">🔊 Volume Up</button>
+                    <button class="suggestion-tag" data-cmd="Clipboard check karo">📋 Clipboard</button>
+                    <button class="suggestion-tag" data-cmd="Screen par kya hai?">👁️ Screen Vision</button>
+                </div>
+            </div>
+
+            <div class="suggestion-category-row">
+                <span class="category-badge">🎵 Media & Web</span>
+                <div class="pills-group">
+                    <button class="suggestion-tag" data-cmd="YouTube pe lo-fi chill music chalao">▶️ YouTube</button>
+                    <button class="suggestion-tag" data-cmd="Spotify pe relax songs chalao">🎧 Spotify</button>
+                    <button class="suggestion-tag" data-cmd="Google search top anime 2026">⛩️ Anime Lookup</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="shortcut-hints">
+            <span>⚡ <b>Spacebar</b>: Hold to speak</span>
+            <span>🛑 <b>Esc</b>: Interrupt</span>
+            <span>⌨️ <b>Enter</b>: Send text</span>
+            <span>🎙️ <b id="hintWakeWord">"Hey Astra" / "Hey Jarvis"</b>: Hands-free</span>
+        </div>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings & Preferences</h3>
+                <button id="closeModalBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <label for="wakeWordSelect">Wake Word Trigger Name:</label>
+                    <select id="wakeWordSelect" class="settings-select">
+                        <option value="both">Both ("Hey Astra" & "Hey Jarvis")</option>
+                        <option value="astra">"Hey Astra" (Default)</option>
+                        <option value="jarvis">"Hey Jarvis"</option>
+                    </select>
+                    <p class="help-text">Choose which wake word triggers ambient listening. Stored in browser storage.</p>
+                </div>
+
+                <div class="settings-group">
+                    <label for="apiKeyInput">Google Gemini API Key:</label>
+                    <input type="password" id="apiKeyInput" placeholder="Paste your API key here...">
+                    <p class="help-text">Get a free key from <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>. (Tool works in offline fallback even without key for basic apps!).</p>
+                    <button id="saveKeyBtn" class="primary-btn">Save Key</button>
+                    <div id="saveStatus" class="save-status"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Audio Player -->
+    <audio id="audioPlayer" preload="auto"></audio>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

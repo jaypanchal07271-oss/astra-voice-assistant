@@ -1,0 +1,33 @@
+mcp
+AppOpener
+pyautogui
+pywin32>=306
+pyperclip
+python-dotenv>=1.0.0
+pillow>=10.0.0
+
+# Voice Assistant Dependencies
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+edge-tts>=7.0.0
+google-genai>=2.0.0
+
+# Testing Dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
+# Google Workspace (Gmail & Calendar) Integration & Encryption
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.100.0
+cryptography>=42.0.0
+
+# WhatsApp Web Automation
+playwright>=1.40.0
+
+# Mobile Web Push Notifications (VAPID)
+pywebpush>=2.5.0
+py-vapid>=1.9.0
+
+# YouTube Automation
+pywhatkit>=5.4
+

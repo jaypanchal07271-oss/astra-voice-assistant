@@ -1,0 +1,43 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Environment and sensitive secrets
+.env
+credentials.json
+token_google.enc
+token.json
+*.enc
+.whatsapp_profile/
+whatsapp_audit.log
+instagram_profile/
+.instagram_profile/
+data/instagram_profile/
+instagram_audit.log
+instagram_usage.json
+data/instagram_usage.json
+logs/
+data/
+
+# Generated voice assistant audio files
+static/audio/*.mp3
+
+# Generated screenshots
+screenshots/*.png
+
+# IDE / Editor configuration
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS temporary files
+.DS_Store
+Thumbs.db
+
