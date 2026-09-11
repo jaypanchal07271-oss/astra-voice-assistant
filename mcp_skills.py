@@ -100,6 +100,19 @@ def open_or_search_website(query: str, search: bool = False) -> str:
 
 
 @mcp.tool()
+def web_search_qa(query: str) -> str:
+    """Perform real-time web search to answer factual or general knowledge questions.
+
+    Args:
+        query: Factual question or search topic.
+    """
+    res = actions.search_web_for_answer(query)
+    if res.get("success"):
+        return res.get("results", "No search results found.")
+    return f"Search failed: {res.get('error', 'Unknown error')}"
+
+
+@mcp.tool()
 def send_whatsapp_message(phone: str, message: str) -> str:
     """Open web.whatsapp.com/send URL with pre-filled encoded text ready to send.
 

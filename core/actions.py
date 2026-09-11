@@ -1377,21 +1377,36 @@ def send_whatsapp_reply(chat_name: str, message: str) -> Dict[str, Any]:
 @log_tool_call()
 def send_whatsapp_message(contact_name: str = "", message: str = "", phone: str = "") -> Dict[str, Any]:
     """
-    Sends a WhatsApp message by contact name using UI automation (Playwright or Desktop UI).
-    If phone number is provided without a name, falls back to direct URL pre-fill.
+    Sends a WhatsApp message by contact name using UI automation (PyAutoGUI + Pyperclip).
+    If UI automation encounters issues or fails, automatically falls back to fail-proof WhatsApp Web URL pre-fill.
     """
-    if contact_name and contact_name.strip():
+    clean_contact = contact_name.strip() if contact_name else ""
+    clean_msg = message.strip() if message else ""
+    clean_phone = phone.strip() if phone else ""
+
+    # Detect if contact_name is actually a phone number
+    digits = "".join(filter(str.isdigit, clean_contact))
+    if digits and len(digits) >= 10:
+        clean_phone = digits
+
+    if clean_contact and not clean_phone:
         try:
             from core import whatsapp_agent
-            return whatsapp_agent.send_whatsapp_message_ui(contact_name=contact_name.strip(), message=message)
+            res = whatsapp_agent.send_whatsapp_message_ui(contact_name=clean_contact, message=clean_msg)
+            if res.get("success"):
+                return res
+            logger.warning(f"WhatsApp UI automation returned failure: {res.get('error')}. Engaging fail-proof browser URL fallback.")
         except Exception as e:
-            return {
-                "success": False,
-                "action": "send_whatsapp_message",
-                "error": str(e),
-                "message": f"WhatsApp message error: {e}"
-            }
-    return send_whatsapp(phone=phone, message=message)
+            logger.warning(f"WhatsApp UI automation exception: {e}. Engaging fail-proof browser URL fallback.")
+
+    # Fail-Proof Fallback: Use direct WhatsApp Web URL with pre-filled text
+    fallback_res = send_whatsapp(phone=clean_phone, message=clean_msg)
+    target_info = f"'{clean_contact}'" if clean_contact else (f"number +{clean_phone}" if clean_phone else "WhatsApp")
+    fallback_res["message"] = (
+        f"{target_info} ke liye WhatsApp Web open kar diya hai. Message pre-filled hai, bas Enter dabakar send karein."
+    )
+    fallback_res["fallback_engaged"] = True
+    return fallback_res
 
 
 @log_tool_call()
@@ -1482,5 +1497,98 @@ def search_instagram_user(query: str = "") -> Dict[str, Any]:
     }
 
 
+@log_tool_call()
+def search_web_for_answer(query: str) -> Dict[str, Any]:
+    """
+    Searches the web in real-time for factual, up-to-date, or general knowledge answers,
+    and returns a clean, compiled string of top search result snippets.
+    """
+    clean_query = sanitize_text(query).strip()
+    if not clean_query:
+        return {
+            "success": False,
+            "action": "search_web_for_answer",
+            "query": query,
+            "error": "Query cannot be empty",
+            "results": "Search query was empty."
+        }
 
+    # 1. Primary: Use ddgs / duckduckgo_search
+    try:
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
 
+        raw_results = []
+        with DDGS() as ddgs:
+            raw_results = list(ddgs.text(clean_query, max_results=4))
+
+        if raw_results:
+            snippets = []
+            for i, r in enumerate(raw_results, 1):
+                title = (r.get("title") or "").strip()
+                body = (r.get("body") or "").strip()
+                href = (r.get("href") or "").strip()
+                if title or body:
+                    snippet_entry = f"[{i}] {title}\nSummary: {body}"
+                    if href:
+                        snippet_entry += f"\nSource: {href}"
+                    snippets.append(snippet_entry)
+
+            if snippets:
+                compiled_text = "\n\n".join(snippets)
+                return {
+                    "success": True,
+                    "action": "search_web_for_answer",
+                    "query": clean_query,
+                    "count": len(snippets),
+                    "results": compiled_text,
+                    "message": f"Found {len(snippets)} search results for '{clean_query}'."
+                }
+    except Exception as e:
+        logger.warning(f"DDGS search failed for '{clean_query}': {e}. Attempting fallback.")
+
+    # 2. Fallback: DuckDuckGo HTML / Web scraping with urllib and regex
+    try:
+        import urllib.parse
+        import urllib.request
+        import html
+
+        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(clean_query)}"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            raw_html = resp.read().decode("utf-8", errors="ignore")
+
+        # Extract result snippets via regex without external bs4 dependency
+        raw_snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', raw_html, re.DOTALL)
+        clean_snippets = []
+        for i, raw_s in enumerate(raw_snippets[:4], 1):
+            clean_s = re.sub(r'<[^>]+>', '', raw_s)
+            clean_s = html.unescape(clean_s).strip()
+            if clean_s:
+                clean_snippets.append(f"[{i}] {clean_s}")
+
+        if clean_snippets:
+            compiled_text = "\n\n".join(clean_snippets)
+            return {
+                "success": True,
+                "action": "search_web_for_answer",
+                "query": clean_query,
+                "count": len(clean_snippets),
+                "results": compiled_text,
+                "message": f"Found {len(clean_snippets)} fallback results for '{clean_query}'."
+            }
+    except Exception as fe:
+        logger.warning(f"Web search fallback failed: {fe}")
+
+    return {
+        "success": False,
+        "action": "search_web_for_answer",
+        "query": clean_query,
+        "error": "No results found or network error.",
+        "results": f"Could not find web search results for '{clean_query}'."
+    }

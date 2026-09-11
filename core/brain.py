@@ -78,15 +78,17 @@ Available Tools:
 17. get_instagram_unread(max_chats): Check unread direct messages (DMs) on Instagram Web.
 18. send_instagram_dm(username, message): Send an automated direct message to an Instagram user (enforces 90s cooldown and 20 DMs/day ceiling).
 19. search_instagram_user(query): Search for an Instagram user profile or explore topic without sending a direct message.
+20. search_web_for_answer(query): Use this tool to search the internet for answers to real-time, factual, or general knowledge questions.
 
 Guidelines:
 - Keep your spoken responses concise, friendly, and natural (1-2 short sentences max).
 - Speak in the same language the user spoke (Hindi for Hindi, English for English, Hinglish for Hinglish).
+- If the user asks a question that requires up-to-date information, facts, news, or something you are not 100% sure about, you MUST call the `search_web_for_answer` tool first, read its results, and then generate your final spoken response based on those results.
 - Always call the corresponding tool ONLY when an actual laptop action or setting change is requested.
 - If the user gives a generic open command like "kuch bhi open karo", "koi bhi app kholo", or "open something", do NOT guess or call open_application with "kuch bhi". Ask them politely which specific application they want to open (e.g., Notepad, Chrome, Calculator, VS Code).
 - CRITICAL TRUTHFULNESS: Check tool results. If a tool returns an error or failure, NEVER claim that the app opened or the action succeeded. Inform the user truthfully that it could not be opened and ask for the correct app name.
 - Strict Website & App Execution: When a user asks to open a website or application (e.g., WhatsApp Web, YouTube, Chrome, Notepad), you must strictly use the designated tool/function call (open_or_search_website or open_application) or output ACTION: OPEN_URL_WHATSAPP to execute the action. Do not generate a conversational success response until you receive confirmation from the system that the tool was executed successfully.
-- Never falsely claim to have opened a website, app, or performed a system action. You must trigger the backend command first and base your verbal response only on the actual execution result.
+- Never falsely claim to have opened a website, app, sent a message, or performed a system action. You must trigger the backend command first and base your verbal response only on the actual execution result.
 - If the user requests to open WhatsApp Web, you must trigger the action by calling open_or_search_website(website="whatsapp") or outputting ACTION: OPEN_URL_WHATSAPP, and only say it is done after the system confirms it.
 - Never use bullet points, numbered lists, markdown symbols (asterisks, hashes, backticks), or code snippets in spoken replies. Formulate full, flowing conversational sentences suitable for human speech synthesis.
 """
@@ -366,6 +368,15 @@ def play_youtube_video(query: str = "") -> str:
     res = dispatch_action_safe("play_youtube_video", {"query": clean_query})
     return res.get("message", f"Playing {clean_query} on YouTube")
 
+def search_web_for_answer(query: str = "") -> str:
+    """Use this tool to search the internet for answers to real-time, factual, or general knowledge questions."""
+    _log_tool_invocation("search_web_for_answer", {"query": query})
+    clean_query = query.strip()
+    res = actions.search_web_for_answer(clean_query)
+    if res.get("success"):
+        return res.get("results", "No relevant information found.")
+    return f"Search could not find information: {res.get('error', 'Unknown error')}"
+
 
 TOOLS_LIST = [
     open_application,
@@ -389,7 +400,8 @@ TOOLS_LIST = [
     send_instagram_dm,
     get_instagram_messages,
     send_instagram_message,
-    search_instagram_user
+    search_instagram_user,
+    search_web_for_answer
 ]
 
 TOOL_MAP = {
@@ -414,7 +426,8 @@ TOOL_MAP = {
     "send_instagram_dm": send_instagram_dm,
     "get_instagram_messages": get_instagram_unread,
     "send_instagram_message": send_instagram_dm,
-    "search_instagram_user": search_instagram_user
+    "search_instagram_user": search_instagram_user,
+    "search_web_for_answer": search_web_for_answer
 }
 
 
@@ -1281,6 +1294,21 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                     }
                 return {"reply": f"{app_target.capitalize()} band kar diya hai.", "action": res}
 
+    # 17. Real-Time Web Search & Q&A
+    m_search = re.search(
+        r'^(?:search\s+(?:the\s+)?web\s+(?:for\s+)?|web\s+search\s+(?:for\s+)?|search\s+online\s+(?:for\s+)?|search\s+internet\s+(?:for\s+)?|internet\s+pe\s+search\s+karo\s+|web\s+pe\s+search\s+karo\s+)(.*)',
+        text,
+        re.IGNORECASE
+    )
+    if m_search:
+        q_srch = m_search.group(1).strip()
+        if q_srch:
+            res = actions.search_web_for_answer(q_srch)
+            if res.get("success"):
+                summary_text = res.get("results", "")
+                return {"reply": f"Web search results:\n{summary_text[:400]}", "action": res}
+            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": res}
+
     return {
         "reply": "Ji, maine suna. Kripya batayein main aapki kya madad karoon, jaise koi app kholna, screen dekhna, gaana chalana ya dev environment start karna?",
         "action": None
@@ -1515,6 +1543,15 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
             q_user = action_data.get("query", "")
             act_res = dispatch_action_safe("search_instagram_user", {"query": q_user})
             return {"reply": act_res.get("message", f"Instagram par '{q_user}' search kar diya hai."), "action": act_res}
+
+        elif act_type == "search_web_for_answer":
+            q_web = action_data.get("query", "")
+            act_res = actions.search_web_for_answer(query=q_web)
+            if act_res.get("success"):
+                reply_text = act_res.get("results", "Web search results retrieved.")
+            else:
+                reply_text = f"Kshama karein, search nahi ho saka: {act_res.get('error', 'Error')}"
+            return {"reply": reply_text, "action": act_res}
 
         elif act_type in ["open_website", "open_url", "open_or_search_website"]:
             site = action_data.get("website") or action_data.get("url") or "youtube"

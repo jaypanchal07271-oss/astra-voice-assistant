@@ -43,6 +43,7 @@ SUPPORTED_TOOLS = {
     "play_youtube_video",
     "play_spotify_music",
     "search_instagram_user",
+    "search_web_for_answer",
 }
 
 
