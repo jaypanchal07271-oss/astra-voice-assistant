@@ -1497,11 +1497,78 @@ def search_instagram_user(query: str = "") -> Dict[str, Any]:
     }
 
 
+# =====================================================================
+# Real-Time Web Search & Factual Q&A Engine (Production-Hardened)
+# =====================================================================
+
+_WEB_SEARCH_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_WEB_SEARCH_CACHE_LOCK = threading.Lock()
+WEB_SEARCH_CACHE_TTL = 600.0  # 10 minutes cache TTL
+MAX_COMPILED_SEARCH_CHARS = 1500
+
+_SEARCH_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+]
+
+
+def clear_web_search_cache() -> None:
+    """Clears the web search cache (useful for tests and fresh sessions)."""
+    with _WEB_SEARCH_CACHE_LOCK:
+        _WEB_SEARCH_CACHE.clear()
+
+
+def normalize_search_query(query: str) -> str:
+    """
+    Normalizes Hinglish/Hindi queries into high-relevance search terms.
+    e.g. 'Aaj ka mausam kaisa hai' -> 'weather today'
+         'iPhone 16 ki price kya hai' -> 'iPhone 16 price'
+         'bhai batao who is prime minister' -> 'who is prime minister'
+    """
+    if not query:
+        return ""
+    q = query.strip()
+
+    # Strip conversational noise and filler phrases
+    conversational_fillers = [
+        r'\b(?:bhai|yaar|dost|bro|bhaiya|ji|suno|arre)\b',
+        r'\b(?:batao|batana|bataiye|bolo|kahiye|batado|tell me|please tell me|can you tell me)\b',
+        r'\b(?:kripya|please|plz|zara|ek baar|thoda)\b',
+        r'\b(?:mujhe|hamein|humko|apne ko|mere ko)\b',
+        r'\b(?:search karo|search karke batao|dhoondo|dhoond ke batao|look up|google karo|web search)\b'
+    ]
+    for pattern in conversational_fillers:
+        q = re.sub(pattern, ' ', q, flags=re.IGNORECASE)
+
+    # Stem replacements for common Hinglish queries
+    stem_mappings = [
+        (r'\b(?:aaj\s+ka\s+mausam\s+kaisa\s+hai|aaj\s+ka\s+mausam|aaj\s+mausam\s+kaisa\s+hai|weather\s+kaisa\s+hai|mausam\s+kaisa\s+hai)\b', 'weather today'),
+        (r'\b(?:kal\s+ka\s+mausam\s+kaisa\s+hoga|kal\s+ka\s+mausam|kal\s+mausam\s+kaisa\s+hoga)\b', 'weather tomorrow'),
+        (r'\b(?:ki\s+price\s+kya\s+hai|ka\s+price\s+kya\s+hai|price\s+kitna\s+hai|kitne\s+ka\s+hai|cost\s+kitni\s+hai)\b', 'price'),
+        (r'\b(?:kab\s+release\s+hoga|kab\s+aayega|release\s+date\s+kya\s+hai|launch\s+kab\s+hoga)\b', 'release date'),
+        (r'\b(?:kaun\s+hai|kaun\s+tha|kaun\s+thi)\b', 'who is'),
+        (r'\b(?:kya\s+hai|kya\s+hota\s+hai|kya\s+hoti\s+hai)\b', 'what is'),
+        (r'\b(?:kahan\s+hai|kahan\s+par\s+hai)\b', 'where is'),
+        (r'\b(?:kaise\s+karein|kaise\s+hota\s+hai|kaise\s+karte\s+hain)\b', 'how to'),
+        (r'\b(?:aaj\s+ki\s+news|taza\s+khabar|aaj\s+ki\s+taaza\s+khabar|latest\s+khabar)\b', 'latest news today'),
+        (r'\b(?:match\s+ka\s+score|score\s+kya\s+hai|live\s+score\s+kya\s+hai)\b', 'live score'),
+    ]
+    for pattern, replacement in stem_mappings:
+        q = re.sub(pattern, replacement, q, flags=re.IGNORECASE)
+
+    # Remove trailing auxiliary particles
+    q = re.sub(r'\b(?:kaisa hai|kaisa hoga|kya hoga|karo|batao)\b', '', q, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s+', ' ', q).strip()
+    return cleaned or query.strip()
+
+
 @log_tool_call()
 def search_web_for_answer(query: str) -> Dict[str, Any]:
     """
     Searches the web in real-time for factual, up-to-date, or general knowledge answers,
-    and returns a clean, compiled string of top search result snippets.
+    featuring TTL caching, exponential backoff retries, Hinglish normalization, and context capping.
     """
     clean_query = sanitize_text(query).strip()
     if not clean_query:
@@ -1513,82 +1580,128 @@ def search_web_for_answer(query: str) -> Dict[str, Any]:
             "results": "Search query was empty."
         }
 
-    # 1. Primary: Use ddgs / duckduckgo_search
-    try:
+    normalized_q = normalize_search_query(clean_query)
+    cache_key = normalized_q.lower()
+
+    # 1. TTL-based Caching Guard (prevents DDG rate limits for repeated questions)
+    now = time.time()
+    with _WEB_SEARCH_CACHE_LOCK:
+        if cache_key in _WEB_SEARCH_CACHE:
+            ts, cached_entry = _WEB_SEARCH_CACHE[cache_key]
+            if now - ts < WEB_SEARCH_CACHE_TTL:
+                logger.info(f"Web search cache hit for '{cache_key}' (age {now - ts:.1f}s)")
+                res_copy = dict(cached_entry)
+                res_copy["cached"] = True
+                return res_copy
+
+    raw_results = []
+    last_error = None
+    retries = 3
+    backoff_delays = [0.4, 1.0, 2.2]
+
+    # 2. Primary Engine: ddgs with Exponential Backoff Retries
+    for attempt in range(retries):
         try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
 
-        raw_results = []
-        with DDGS() as ddgs:
-            raw_results = list(ddgs.text(clean_query, max_results=4))
+            with DDGS() as ddgs:
+                raw_results = list(ddgs.text(normalized_q, max_results=4, safesearch="moderate"))
+            if raw_results:
+                break
+        except Exception as e:
+            last_error = e
+            logger.warning(f"DDGS attempt {attempt + 1}/{retries} failed for '{normalized_q}': {e}")
+            if attempt < retries - 1:
+                time.sleep(backoff_delays[attempt])
 
-        if raw_results:
-            snippets = []
-            for i, r in enumerate(raw_results, 1):
-                title = (r.get("title") or "").strip()
-                body = (r.get("body") or "").strip()
-                href = (r.get("href") or "").strip()
-                if title or body:
-                    snippet_entry = f"[{i}] {title}\nSummary: {body}"
-                    if href:
-                        snippet_entry += f"\nSource: {href}"
-                    snippets.append(snippet_entry)
+    # 3. Process Snippets with Context Length Capping (max 1500 chars total)
+    if raw_results:
+        snippets = []
+        for i, r in enumerate(raw_results, 1):
+            title = (r.get("title") or "").strip()
+            body = (r.get("body") or "").strip()
+            href = (r.get("href") or "").strip()
+            # Truncate individual body snippet to ~320 chars
+            if len(body) > 320:
+                body = body[:317] + "..."
+            if title or body:
+                snippet_entry = f"[{i}] {title}\nSummary: {body}"
+                if href:
+                    snippet_entry += f"\nSource: {href}"
+                snippets.append(snippet_entry)
 
-            if snippets:
-                compiled_text = "\n\n".join(snippets)
-                return {
-                    "success": True,
-                    "action": "search_web_for_answer",
-                    "query": clean_query,
-                    "count": len(snippets),
-                    "results": compiled_text,
-                    "message": f"Found {len(snippets)} search results for '{clean_query}'."
-                }
-    except Exception as e:
-        logger.warning(f"DDGS search failed for '{clean_query}': {e}. Attempting fallback.")
+        if snippets:
+            compiled_text = "\n\n".join(snippets)
+            if len(compiled_text) > MAX_COMPILED_SEARCH_CHARS:
+                compiled_text = compiled_text[:MAX_COMPILED_SEARCH_CHARS - 3] + "..."
 
-    # 2. Fallback: DuckDuckGo HTML / Web scraping with urllib and regex
+            success_res = {
+                "success": True,
+                "action": "search_web_for_answer",
+                "query": clean_query,
+                "normalized_query": normalized_q,
+                "count": len(snippets),
+                "results": compiled_text,
+                "message": f"Found {len(snippets)} search results for '{normalized_q}'."
+            }
+            with _WEB_SEARCH_CACHE_LOCK:
+                _WEB_SEARCH_CACHE[cache_key] = (time.time(), success_res)
+            return success_res
+
+    # 4. Fallback Engine: Direct HTML scraping with User-Agent rotation
     try:
         import urllib.parse
         import urllib.request
         import html
+        import random
 
-        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(clean_query)}"
+        selected_ua = random.choice(_SEARCH_USER_AGENTS)
+        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(normalized_q)}"
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            headers={"User-Agent": selected_ua}
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             raw_html = resp.read().decode("utf-8", errors="ignore")
 
-        # Extract result snippets via regex without external bs4 dependency
         raw_snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', raw_html, re.DOTALL)
         clean_snippets = []
         for i, raw_s in enumerate(raw_snippets[:4], 1):
             clean_s = re.sub(r'<[^>]+>', '', raw_s)
             clean_s = html.unescape(clean_s).strip()
             if clean_s:
+                if len(clean_s) > 320:
+                    clean_s = clean_s[:317] + "..."
                 clean_snippets.append(f"[{i}] {clean_s}")
 
         if clean_snippets:
             compiled_text = "\n\n".join(clean_snippets)
-            return {
+            if len(compiled_text) > MAX_COMPILED_SEARCH_CHARS:
+                compiled_text = compiled_text[:MAX_COMPILED_SEARCH_CHARS - 3] + "..."
+
+            fallback_res = {
                 "success": True,
                 "action": "search_web_for_answer",
                 "query": clean_query,
+                "normalized_query": normalized_q,
                 "count": len(clean_snippets),
                 "results": compiled_text,
-                "message": f"Found {len(clean_snippets)} fallback results for '{clean_query}'."
+                "message": f"Found {len(clean_snippets)} fallback results for '{normalized_q}'."
             }
+            with _WEB_SEARCH_CACHE_LOCK:
+                _WEB_SEARCH_CACHE[cache_key] = (time.time(), fallback_res)
+            return fallback_res
     except Exception as fe:
-        logger.warning(f"Web search fallback failed: {fe}")
+        logger.warning(f"Web search fallback failed for '{normalized_q}': {fe}")
 
     return {
         "success": False,
         "action": "search_web_for_answer",
         "query": clean_query,
-        "error": "No results found or network error.",
+        "normalized_query": normalized_q,
+        "error": str(last_error or "No results found or rate limited."),
         "results": f"Could not find web search results for '{clean_query}'."
     }

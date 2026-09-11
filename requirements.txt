@@ -33,4 +33,3 @@ pywhatkit>=5.4
 
 # Real-Time Web Search & Q&A
 ddgs>=9.0.0
-duckduckgo-search>=8.0.0

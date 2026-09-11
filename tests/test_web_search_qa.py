@@ -1,5 +1,6 @@
 ﻿"""
 Tests for Real-Time Web Search Q&A Feature and WhatsApp Fail-Proof Fallback
+Production-Hardened: Caching, Retries, Normalization, Token Capping.
 """
 
 import pytest
@@ -16,8 +17,19 @@ def test_search_web_for_answer_empty_query():
     assert "Query cannot be empty" in res["error"]
 
 
+def test_normalize_search_query_hinglish():
+    # Test Hinglish weather translation
+    assert "weather today" in actions.normalize_search_query("Aaj ka mausam kaisa hai")
+    # Test Hinglish price question
+    assert "iPhone 16 price" in actions.normalize_search_query("iPhone 16 ki price kya hai")
+    # Test conversational filler stripping
+    assert "who is prime minister of india" in actions.normalize_search_query("bhai batao who is prime minister of india")
+    # Test release date translation
+    assert "GTA 6 release date" in actions.normalize_search_query("GTA 6 kab release hoga")
+
+
 def test_search_web_for_answer_success():
-    # Mock DDGS to ensure deterministic unit test without network dependency
+    actions.clear_web_search_cache()
     mock_results = [
         {"title": "Python 3.14 Features", "body": "Python 3.14 introduces several improvements.", "href": "https://python.org"},
         {"title": "What is new in Python", "body": "Overview of modern Python enhancements.", "href": "https://docs.python.org"}
@@ -39,19 +51,71 @@ def test_search_web_for_answer_success():
         assert "Source: https://python.org" in res["results"]
 
 
-def test_search_web_for_answer_handles_ddgs_exception():
+def test_search_web_for_answer_ttl_caching():
+    actions.clear_web_search_cache()
+    mock_results = [{"title": "Cached Title", "body": "Cached Body Content.", "href": "https://example.com"}]
+
     with patch("ddgs.DDGS") as MockDDGS:
         mock_instance = MagicMock()
-        mock_instance.text.side_effect = Exception("Connection timeout")
+        mock_instance.text.return_value = mock_results
         mock_instance.__enter__.return_value = mock_instance
         mock_instance.__exit__.return_value = None
         MockDDGS.return_value = mock_instance
 
-        # Even if DDGS fails and fallback fails, it returns safe structured error
-        with patch("urllib.request.urlopen", side_effect=Exception("Offline")):
-            res = actions.search_web_for_answer("test query")
-            assert res["success"] is False
-            assert "error" in res
+        # Call 1: Fetches from search engine
+        res1 = actions.search_web_for_answer("quantum computing 2026")
+        assert res1["success"] is True
+        assert res1.get("cached") is not True
+
+        # Call 2: Returns instantly from TTL cache
+        res2 = actions.search_web_for_answer("quantum computing 2026")
+        assert res2["success"] is True
+        assert res2.get("cached") is True
+
+        # DDGS should only have been called once despite two function invocations!
+        assert mock_instance.text.call_count == 1
+
+
+def test_search_web_for_answer_context_capping():
+    actions.clear_web_search_cache()
+    # Provide huge snippets that exceed 1500 chars
+    long_body = "A" * 1000
+    mock_results = [
+        {"title": "Result 1", "body": long_body, "href": "https://example.com/1"},
+        {"title": "Result 2", "body": long_body, "href": "https://example.com/2"},
+        {"title": "Result 3", "body": long_body, "href": "https://example.com/3"},
+    ]
+
+    with patch("ddgs.DDGS") as MockDDGS:
+        mock_instance = MagicMock()
+        mock_instance.text.return_value = mock_results
+        mock_instance.__enter__.return_value = mock_instance
+        mock_instance.__exit__.return_value = None
+        MockDDGS.return_value = mock_instance
+
+        res = actions.search_web_for_answer("massive text query")
+        assert res["success"] is True
+        # Must be hard-capped at 1500 chars to avoid LLM context overflow
+        assert len(res["results"]) <= 1500
+
+
+def test_search_web_for_answer_retry_mechanism():
+    actions.clear_web_search_cache()
+    mock_results = [{"title": "Retry Success", "body": "Recovered after first attempt.", "href": "https://example.com"}]
+
+    with patch("ddgs.DDGS") as MockDDGS:
+        mock_instance = MagicMock()
+        # Fail first call, succeed on second attempt
+        mock_instance.text.side_effect = [Exception("Rate limited 429"), mock_results]
+        mock_instance.__enter__.return_value = mock_instance
+        mock_instance.__exit__.return_value = None
+        MockDDGS.return_value = mock_instance
+
+        with patch("time.sleep"):  # Speed up tests by skipping sleep
+            res = actions.search_web_for_answer("query with retry")
+            assert res["success"] is True
+            assert "Retry Success" in res["results"]
+            assert mock_instance.text.call_count == 2
 
 
 def test_brain_tool_registration():
