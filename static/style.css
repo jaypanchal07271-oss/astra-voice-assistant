@@ -1108,17 +1108,39 @@ body {
     }
 
     .wake-word-btn {
-        padding: 0.4rem 0.65rem;
-        font-size: 0.75rem;
+        padding: 0.5rem 0.8rem;
+        font-size: 0.8rem;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .push-btn {
+        min-height: 44px;
+        padding: 0.5rem 0.8rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .lang-btn {
-        padding: 0.35rem 0.6rem;
-        font-size: 0.75rem;
+        padding: 0.45rem 0.75rem;
+        font-size: 0.8rem;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .icon-btn {
+        min-width: 44px;
+        min-height: 44px;
     }
 
     .main-stage {
         padding: 0.75rem 1rem 1.5rem 1rem;
+        overflow-x: hidden;
     }
 
     .orb-container {
@@ -1155,8 +1177,11 @@ body {
     }
 
     .suggestion-tag {
-        font-size: 0.78rem;
-        padding: 0.35rem 0.75rem;
+        font-size: 0.82rem;
+        padding: 0.45rem 0.85rem;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
     }
 }
 
@@ -1165,6 +1190,8 @@ body {
     .top-nav {
         padding: 0.5rem 0.75rem;
         gap: 0.5rem;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .logo .sparkle {
@@ -1181,7 +1208,8 @@ body {
     }
 
     .header-actions {
-        gap: 0.35rem;
+        gap: 0.4rem;
+        flex-wrap: wrap;
     }
 
     #wakeWordText {
@@ -1189,26 +1217,51 @@ body {
     }
 
     .wake-word-btn {
-        padding: 0.4rem 0.5rem;
-        min-width: 36px;
+        padding: 0.5rem;
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .push-btn {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0.5rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .lang-selector {
         padding: 2px;
+        display: inline-flex;
+        align-items: center;
     }
 
     .lang-btn {
-        padding: 0.25rem 0.45rem;
-        font-size: 0.7rem;
+        padding: 0.35rem 0.55rem;
+        font-size: 0.75rem;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .icon-btn {
-        width: 34px;
-        height: 34px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
     }
 
     .main-stage {
         padding: 0.5rem 0.75rem 1.25rem 0.75rem;
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
     }
 
     .status-container {
@@ -1243,6 +1296,8 @@ body {
         padding: 0.6rem;
         margin-bottom: 0.75rem;
         -webkit-overflow-scrolling: touch;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .chat-bubble {
@@ -1253,13 +1308,16 @@ body {
 
     /* Prominent Mobile Mic Button (Touch-Friendly) */
     .mic-button.voice-primary {
-        width: 74px;
-        height: 74px;
+        width: 76px;
+        height: 76px;
+        min-width: 76px;
+        min-height: 76px;
+        touch-action: manipulation;
     }
 
     .mic-button.voice-primary svg {
-        width: 26px;
-        height: 26px;
+        width: 28px;
+        height: 28px;
     }
 
     .control-bar {
@@ -1269,23 +1327,28 @@ body {
     /* Full-width Responsive Input Field */
     .text-input-container {
         max-width: 100%;
+        width: 100%;
         padding: 0 0.25rem;
+        box-sizing: border-box;
     }
 
     .text-command-form {
         padding: 0.35rem 0.4rem 0.35rem 0.85rem;
         border-radius: 24px;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .text-command-input {
         font-size: 16px; /* 16px minimum prevents iOS Safari from automatically zooming on focus */
+        padding-right: 3.2rem;
     }
 
     .send-text-btn {
-        width: 38px;
-        height: 38px;
-        min-width: 38px;
-        min-height: 38px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
         touch-action: manipulation;
     }
 
@@ -1296,6 +1359,7 @@ body {
         -webkit-overflow-scrolling: touch;
         padding-bottom: 0.4rem;
         gap: 0.5rem;
+        box-sizing: border-box;
     }
 
     .suggestion-category-row {
@@ -1303,6 +1367,8 @@ body {
         align-items: flex-start;
         padding: 0.5rem 0.65rem;
         gap: 0.4rem;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .pills-group {
@@ -1313,14 +1379,15 @@ body {
         gap: 0.4rem;
         padding-bottom: 2px;
         -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
     }
 
     .suggestion-tag {
         white-space: nowrap;
         flex-shrink: 0;
         font-size: 0.78rem;
-        padding: 0.4rem 0.75rem;
-        min-height: 36px;
+        padding: 0.5rem 0.85rem;
+        min-height: 44px;
         display: inline-flex;
         align-items: center;
         touch-action: manipulation;
