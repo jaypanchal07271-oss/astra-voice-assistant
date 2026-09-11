@@ -1,4 +1,4 @@
-﻿"""
+"""
 UI/UX Refactor Test Suite for Astra Assistant
 Verifies the 5 premium frontend upgrades:
 1. Dynamic Orb State CSS classes (.orb-listening, .orb-thinking, .orb-speaking) & Dusky Pink glow.
@@ -58,17 +58,17 @@ def test_input_field_embedded_send_and_microphone_dominance():
     assert "position: absolute" in css
 
 
-def test_categorized_suggestion_pills_in_three_sections():
+def test_minimalist_clean_ui_no_cluttered_suggestions():
     html = (BASE_DIR / "static" / "index.html").read_text(encoding="utf-8")
     css = (BASE_DIR / "static" / "style.css").read_text(encoding="utf-8")
 
-    # 3 distinct categories
-    assert "Dev Tools" in html
-    assert "System" in html
-    assert "Media & Web" in html
-    assert "categorized-suggestions" in html
+    # Cluttered suggestion pills and physical shortcut hints are removed for voice-first minimalism
+    assert "categorized-suggestions" not in html
+    assert "shortcut-hints" not in html
+    assert "Dev Tools" not in html
+    assert ".categorized-suggestions" not in css
 
-    # Modern glassmorphism styling
+    # Modern glassmorphism styling is preserved across interactive components
     assert "backdrop-filter" in css
 
 

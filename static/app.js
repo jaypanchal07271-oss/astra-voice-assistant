@@ -18,7 +18,6 @@ const assistantReply = document.getElementById('assistantReply');
 const micBtn = document.getElementById('micBtn');
 const audioPlayer = document.getElementById('audioPlayer') || new Audio();
 const langBtns = document.querySelectorAll('.lang-btn');
-const suggestionTags = document.querySelectorAll('.suggestion-tag');
 const wakeWordToggleBtn = document.getElementById('wakeWordToggleBtn');
 const wakeWordText = document.getElementById('wakeWordText');
 const pushNotificationBtn = document.getElementById('pushNotificationBtn');
@@ -890,19 +889,6 @@ langBtns.forEach(btn => {
             recognition.lang = currentLang;
         }
         console.log("[Astra] Language changed to:", currentLang);
-    });
-});
-
-// Quick suggestion chips
-suggestionTags.forEach(tag => {
-    tag.addEventListener('click', () => {
-        const cmd = tag.dataset.cmd;
-        if (cmd) {
-            if (isAssistantSpeaking()) {
-                interruptPlayback(false);
-            }
-            sendVoiceCommand(cmd);
-        }
     });
 });
 

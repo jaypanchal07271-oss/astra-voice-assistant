@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for Real-Time Web Search Q&A Feature and WhatsApp Fail-Proof Fallback
 Production-Hardened: Caching, Retries, Normalization, Token Capping.
 """
@@ -48,7 +48,8 @@ def test_search_web_for_answer_success():
         assert res["action"] == "search_web_for_answer"
         assert res["count"] == 2
         assert "Python 3.14 Features" in res["results"]
-        assert "Source: https://python.org" in res["results"]
+        assert "Link: https://python.org" in res["results"]
+        assert "(Source: Python)" in res["results"]
 
 
 def test_search_web_for_answer_ttl_caching():
