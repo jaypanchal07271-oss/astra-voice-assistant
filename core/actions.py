@@ -1544,8 +1544,11 @@ def normalize_search_query(query: str) -> str:
 
     # Stem replacements for common Hinglish queries
     stem_mappings = [
+        (r'\b(?:aaj\s+ka\s+gold\s+rate|gold\s+rate\s+aaj\s+ka|aaj\s+gold\s+ka\s+rate|gold\s+rate\s+kya\s+hai|gold\s+ka\s+rate)\b', 'gold rate today'),
+        (r'\b(?:aaj\s+ka\s+silver\s+rate|silver\s+rate\s+aaj\s+ka|silver\s+ka\s+rate)\b', 'silver rate today'),
         (r'\b(?:aaj\s+ka\s+mausam\s+kaisa\s+hai|aaj\s+ka\s+mausam|aaj\s+mausam\s+kaisa\s+hai|weather\s+kaisa\s+hai|mausam\s+kaisa\s+hai)\b', 'weather today'),
         (r'\b(?:kal\s+ka\s+mausam\s+kaisa\s+hoga|kal\s+ka\s+mausam|kal\s+mausam\s+kaisa\s+hoga)\b', 'weather tomorrow'),
+        (r'\b(?:latest\s+version\s+kaunsa\s+hai|kaunsa\s+version\s+hai|kaunsa\s+version\s+chal\s+raha\s+hai)\b', 'latest stable version'),
         (r'\b(?:ki\s+price\s+kya\s+hai|ka\s+price\s+kya\s+hai|price\s+kitna\s+hai|kitne\s+ka\s+hai|cost\s+kitni\s+hai)\b', 'price'),
         (r'\b(?:kab\s+release\s+hoga|kab\s+aayega|release\s+date\s+kya\s+hai|launch\s+kab\s+hoga)\b', 'release date'),
         (r'\b(?:kaun\s+hai|kaun\s+tha|kaun\s+thi)\b', 'who is'),
@@ -1559,7 +1562,7 @@ def normalize_search_query(query: str) -> str:
         q = re.sub(pattern, replacement, q, flags=re.IGNORECASE)
 
     # Remove trailing auxiliary particles
-    q = re.sub(r'\b(?:kaisa hai|kaisa hoga|kya hoga|karo|batao)\b', '', q, flags=re.IGNORECASE)
+    q = re.sub(r'\b(?:kaisa hai|kaisa hoga|kya hoga|karo|batao|what is|kya hai)\b', '', q, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s+', ' ', q).strip()
     return cleaned or query.strip()
 
