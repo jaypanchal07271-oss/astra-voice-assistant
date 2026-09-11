@@ -100,6 +100,24 @@ _SHARED_FILE_HANDLER: Optional[TimedRotatingFileHandler] = None
 _SHARED_CONSOLE_HANDLER: Optional[logging.StreamHandler] = None
 
 
+class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """
+    Windows-resilient TimedRotatingFileHandler that prevents PermissionError [WinError 32]
+    during file rollover when other processes hold handles to the log file.
+    """
+    def rotate(self, source, dest):
+        try:
+            super().rotate(source, dest)
+        except Exception:
+            pass
+
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except Exception:
+            pass
+
+
 def setup_logger(name: str = "astra") -> logging.Logger:
     """
     Configures and returns a logger instance writing JSON to logs/astra.log
@@ -119,7 +137,7 @@ def setup_logger(name: str = "astra") -> logging.Logger:
 
     # 1. Daily Timed Rotating File Handler (Shared singleton across all astra loggers)
     if _SHARED_FILE_HANDLER is None:
-        _SHARED_FILE_HANDLER = TimedRotatingFileHandler(
+        _SHARED_FILE_HANDLER = SafeTimedRotatingFileHandler(
             filename=str(LOG_FILE),
             when="midnight",
             interval=1,

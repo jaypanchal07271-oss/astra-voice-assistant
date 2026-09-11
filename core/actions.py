@@ -320,6 +320,61 @@ def close_app(app_name: str) -> Dict[str, Any]:
         return {"success": False, "action": "close_app", "app": app_name, "error": str(e), "message": f"{app_name} band nahi ho paya."}
 
 
+@log_tool_call()
+def execute_cmd_command(command: str) -> Dict[str, Any]:
+    """
+    Executes a safe diagnostic or developer command in Windows CMD and returns output.
+    Blocks destructive system commands.
+    """
+    clean_cmd = sanitize_text(command).strip()
+    if not clean_cmd:
+        return {"success": False, "action": "execute_cmd_command", "message": "Command cannot be empty."}
+
+    # Security check: Block destructive operations
+    blocked = ["format", "del /s", "del /f", "rmdir /s", "rd /s", "diskpart", "shutdown", "reg delete"]
+    if any(b in clean_cmd.lower() for b in blocked):
+        return {
+            "success": False,
+            "action": "execute_cmd_command",
+            "message": "Security Guardrail: Destructive CMD commands are blocked."
+        }
+
+    try:
+        proc = subprocess.run(
+            ["cmd.exe", "/c", clean_cmd],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False
+        )
+        out = (proc.stdout or "").strip()
+        err = (proc.stderr or "").strip()
+        combined = out or err or "Command executed with no output."
+        capped_out = combined[:800]
+        return {
+            "success": proc.returncode == 0,
+            "action": "execute_cmd_command",
+            "command": clean_cmd,
+            "output": capped_out,
+            "message": f"CMD result: {capped_out}"
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "action": "execute_cmd_command",
+            "command": clean_cmd,
+            "message": "CMD command timed out after 10 seconds."
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "action": "execute_cmd_command",
+            "command": clean_cmd,
+            "error": str(e),
+            "message": f"Command execute nahi ho saka: {str(e)}"
+        }
+
+
 # =====================================================================
 # Web & Communication Tools
 # =====================================================================

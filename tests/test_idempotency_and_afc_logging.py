@@ -140,7 +140,7 @@ async def test_process_voice_command_skips_fallback_interceptor_when_afc_invoked
     with patch("core.brain.session_manager.get_or_create_chat", return_value=mock_chat), \
          patch("core.brain.dispatch_action_safe") as mock_dispatch, \
          patch("core.brain.GEMINI_API_KEY", "test_key"), \
-         patch.dict("os.environ", {"GEMINI_API_KEY": "test_key"}):
+         patch.dict("os.environ", {"GEMINI_API_KEY": "test_key", "OPENROUTER_API_KEY": ""}):
 
         result = await brain.process_voice_command("youtube kholo", session_id=session_id)
 
@@ -223,7 +223,7 @@ async def test_process_voice_command_structured_json_open_website_no_fallthrough
 
     with patch("core.brain.session_manager.get_or_create_chat", return_value=mock_chat), \
          patch("core.brain.dispatch_action_safe", side_effect=fake_dispatch), \
-         patch.dict("os.environ", {"GEMINI_API_KEY": "test_key"}):
+         patch.dict("os.environ", {"GEMINI_API_KEY": "test_key", "OPENROUTER_API_KEY": ""}):
 
         res = await brain.process_voice_command("open youtube", session_id=session_id)
 
@@ -253,7 +253,7 @@ async def test_process_voice_command_structured_json_open_application_no_fallthr
 
     with patch("core.brain.session_manager.get_or_create_chat", return_value=mock_chat), \
          patch("core.brain.dispatch_action_safe", side_effect=fake_dispatch), \
-         patch.dict("os.environ", {"GEMINI_API_KEY": "test_key"}):
+         patch.dict("os.environ", {"GEMINI_API_KEY": "test_key", "OPENROUTER_API_KEY": ""}):
 
         res = await brain.process_voice_command("notepad kholo", session_id=session_id)
 

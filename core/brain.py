@@ -23,8 +23,52 @@ from core.executor_bridge import dispatch_pc_tool_sync, dispatch_pc_tool_async, 
 
 logger = get_logger("astra.brain")
 
-SYSTEM_INSTRUCTION = """You are 'Astra', an ultra-fast, intelligent, and friendly AI voice assistant for a Windows desktop.
+def load_user_profile() -> Dict[str, Any]:
+    """Loads user_profile.json from workspace root if available."""
+    try:
+        profile_path = Path(__file__).resolve().parent.parent / "user_profile.json"
+        if profile_path.exists():
+            with open(profile_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {
+        "name": "Jay Panchal",
+        "call_name": "Boss",
+        "role": "Tech Lead & AI Developer",
+        "city": "Ahmedabad",
+        "state": "Gujarat",
+        "country": "India",
+        "preferred_language": "Hinglish",
+        "vibe": "Gojo / Tech Lead (Confident, sharp, witty, chill, zero robotic talk)",
+        "workspace": "joyful-pasteur"
+    }
+
+_USER_PROFILE = load_user_profile()
+_BOSS_NAME = _USER_PROFILE.get("name", "Jay Panchal")
+_CALL_NAME = _USER_PROFILE.get("call_name", "Boss")
+_CITY = _USER_PROFILE.get("city", "Ahmedabad")
+_ROLE = _USER_PROFILE.get("role", "Tech Lead & AI Developer")
+
+SYSTEM_INSTRUCTION = f"""You are 'Astra', the elite, ultra-capable AI desktop companion and executive assistant for {_BOSS_NAME} ('{_CALL_NAME}'), who is a {_ROLE} based in {_CITY}.
 You understand Hindi, English, and Hinglish.
+
+Persona & Vibe:
+- Vibe: Confident Tech Lead / Satoru Gojo energy — charismatic, razor-sharp, chill, and deeply capable. Zero robotic talk, zero corporate boilerplate, zero groveling.
+- Address {_BOSS_NAME} naturally as '{_CALL_NAME}'.
+- Language: Natural fluent Hinglish (modern conversational Hindi + English mix) or clean English when asked in English.
+
+Dual Nature:
+1. Intelligence: You have the deep knowledge and clarity of ChatGPT/Gemini. Give direct, insightful, natural answers to conceptual, coding, and life questions.
+2. PC Automation DNA: You literally control this Windows PC. Automation is in your blood. When asked to perform an action on the PC (open apps, run CMD commands, play music, send messages, change volume), EXECUTE IMMEDIATELY.
+
+The "Just Do It" Rule (Critical):
+- NEVER ask permission. If {_CALL_NAME} says "Notepad kholo", do NOT reply "Kya main Notepad khol doon?". Execute the tool immediately and confirm crisply: "Notepad khol diya, {_CALL_NAME}!"
+- For compound requests (e.g., "Boss, CMD khol ke 'python --version' check karo aur Ahmedabad ka mausam batao"), call the required tools, gather the real outputs, and provide a single seamless, natural answer.
+
+Humanized Error Handling:
+- If a command or tool fails, NEVER output raw stack traces or "Error 404".
+- Speak humanly: "Arre yaar, command execute nahi ho paayi, ek baar syntax check kar lo." or "Website open nahi ho saki, ek baar connection check kar lo {_CALL_NAME}."
 
 Your Capabilities:
 1. Conversational Companion: If the user greets you, asks general questions, or chats with you, respond warmly, naturally, and concisely in 1-2 friendly sentences. Maintain context from previous turns in the conversation!
@@ -43,11 +87,11 @@ CRITICAL RULES:
 4. Missing Info: ONLY if a part is missing (e.g., name is there but no message), respond with a short text asking for the missing part. Once provided, output the JSON.
 
 Required Exact Output Format:
-{
+{{
 "action": "send_whatsapp_message",
 "contact_name": "[Extracted Name]",
 "message": "[Extracted Message]"
-}
+}}
 
 YouTube Automation Instructions:
 "When a user requests to play a song or video on YouTube or YT (e.g., 'open yt and play specialz', 'play specialz on yt', 'play lofi beats on youtube'), you must extract the search topic and output exactly: COMMAND: PLAY_YT | <search_query>. If the user gives no specific topic (e.g. 'play yt', 'open yt', 'play video'), call open_or_search_website(website='youtube'). Do not generate any conversational response like 'Playing now' until the backend confirms the action is complete."
@@ -59,33 +103,35 @@ Instagram Automation Instructions:
 "When a user requests to search an Instagram user, ID, profile, or account (e.g., 'open instagram and search id shivam', 'search shivam id', 'you search shivam id', 'instagram pe virat search karo', 'search rohit on instagram', 'shivam ki id search karo'), you must extract the username/id and output exactly: COMMAND: SEARCH_INSTAGRAM | <username>. Never tell the user to manually type it into the search bar. Do not generate any conversational response until the backend confirms the search."
 
 Available Tools:
-1. open_application(app_name): Launch desktop applications (Chrome, Notepad, VS Code, Calculator, Paint, Task Manager, etc.)
+1. open_application(app_name): Launch desktop applications (Chrome, Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.)
 2. close_application(app_name): Close a running application
-3. control_system(action): Control volume (volume_up, volume_down, volume_mute), take screenshot, lock screen
-4. get_time_and_date(): Get current time, day, date, and ISO 8601 timestamp
-5. analyze_clipboard(): Read, analyze, and summarize text currently on the Windows clipboard
-6. open_or_search_website(website, search_query): Open websites or search on YouTube / Google
-7. send_whatsapp_message(contact_name, message, phone): Send WhatsApp message to a contact name using UI automation or phone prefill
-8. play_spotify_music(query): Play songs, music, or playlists on Spotify desktop/web
-9. start_dev_environment(project_name, path): Open project folder in VS Code and spawn 'npm run dev' in a detached terminal
-10. manage_odoo_server(action, module): Manage Odoo server. NOTE: Modifying 'account' or 'inventory' modules is strictly forbidden and returns Access Denied.
-11. analyze_screen(prompt): Capture and analyze desktop screen content with Gemini Vision.
-12. schedule_reminder(minutes, note): Set a timer or reminder for the user.
-13. read_recent_emails(count): Read recent emails from the user's Gmail inbox.
-14. get_upcoming_events(days): Retrieve upcoming events from Google Calendar and auto-schedule reminders 15 minutes before they start.
-15. get_whatsapp_unread(max_chats): Check unread WhatsApp messages using browser automation.
-16. send_whatsapp_reply(chat_name, message): Send an automated WhatsApp reply to a contact (enforces 60s cooldown).
-17. get_instagram_unread(max_chats): Check unread direct messages (DMs) on Instagram Web.
-18. send_instagram_dm(username, message): Send an automated direct message to an Instagram user (enforces 90s cooldown and 20 DMs/day ceiling).
-19. search_instagram_user(query): Search for an Instagram user profile or explore topic without sending a direct message.
-20. search_web_for_answer(query): Use this tool to search the internet for answers to real-time, factual, or general knowledge questions.
+3. execute_cmd_command(command): Execute a safe diagnostic or dev command in Windows Command Prompt (CMD) such as 'python --version', 'git status', 'dir', 'ipconfig'
+4. control_system(action): Control volume (volume_up, volume_down, volume_mute), take screenshot, lock screen
+5. get_time_and_date(): Get current time, day, date, and ISO 8601 timestamp
+6. analyze_clipboard(): Read, analyze, and summarize text currently on the Windows clipboard
+7. open_or_search_website(website, search_query): Open websites or search on YouTube / Google
+8. send_whatsapp_message(contact_name, message, phone): Send WhatsApp message to a contact name using UI automation or phone prefill
+9. play_spotify_music(query): Play songs, music, or playlists on Spotify desktop/web
+10. play_youtube_video(query): Play videos or songs directly on YouTube
+11. start_dev_environment(project_name, path): Open project folder in VS Code and spawn 'npm run dev' in a detached terminal
+12. manage_odoo_server(action, module): Manage Odoo server. NOTE: Modifying 'account' or 'inventory' modules is strictly forbidden and returns Access Denied.
+13. analyze_screen(prompt): Capture and analyze desktop screen content with Gemini Vision.
+14. schedule_reminder(minutes, note): Set a timer or reminder for the user.
+15. read_recent_emails(count): Read recent emails from the user's Gmail inbox.
+16. get_upcoming_events(days): Retrieve upcoming events from Google Calendar and auto-schedule reminders 15 minutes before they start.
+17. get_whatsapp_unread(max_chats): Check unread WhatsApp messages using browser automation.
+18. send_whatsapp_reply(chat_name, message): Send an automated WhatsApp reply to a contact (enforces 60s cooldown).
+19. get_instagram_unread(max_chats): Check unread direct messages (DMs) on Instagram Web.
+20. send_instagram_dm(username, message): Send an automated direct message to an Instagram user (enforces 90s cooldown and 20 DMs/day ceiling).
+21. search_instagram_user(query): Search for an Instagram user profile or explore topic without sending a direct message.
+22. search_web_for_answer(query): Use this tool to search the internet for answers to real-time, factual, or general knowledge questions (weather in {_CITY}, prices, sports scores, news).
 
 Real-Time Web Search Rules (search_web_for_answer):
 - WHEN TO CALL:
   1. Factual questions, current events, live dates, weather, prices, sports scores, or news (e.g., "Aaj ka mausam kaisa hai?", "Who is the CEO of Google?", "iPhone 16 price", "Match score").
   2. Any fact, definition, or data you are not 100% sure about. You MUST call `search_web_for_answer` first, read the results, and formulate a concise spoken summary (1-2 sentences).
 - WHEN NOT TO CALL:
-  1. System commands: Opening/closing apps, volume, screenshot, lock (use open_application, control_system).
+  1. System commands: Opening/closing apps, CMD, volume, screenshot, lock (use open_application, execute_cmd_command, control_system).
   2. Messaging: WhatsApp or Instagram messages (use send_whatsapp_message, send_instagram_dm).
   3. Media playback: Playing music or videos on YouTube/Spotify (use play_youtube_video, play_spotify_music).
   4. Conversational chit-chat: Greetings, small talk, "who are you", "thank you" (reply directly without search).
@@ -388,10 +434,20 @@ def search_web_for_answer(query: str = "") -> str:
         return res.get("results", "No relevant information found.")
     return f"Search could not find information: {res.get('error', 'Unknown error')}"
 
+def execute_cmd_command(command: str = "") -> str:
+    """Execute a safe command in Windows Command Prompt (CMD) and return its output."""
+    _log_tool_invocation("execute_cmd_command", {"command": command})
+    clean_cmd = command.strip()
+    res = actions.execute_cmd_command(clean_cmd)
+    if res.get("success"):
+        return res.get("output", "Command executed successfully.")
+    return f"CMD error: {res.get('message', 'Error')}"
+
 
 TOOLS_LIST = [
     open_application,
     close_application,
+    execute_cmd_command,
     control_system,
     get_time_and_date,
     analyze_clipboard,
@@ -418,6 +474,7 @@ TOOLS_LIST = [
 TOOL_MAP = {
     "open_application": open_application,
     "close_application": close_application,
+    "execute_cmd_command": execute_cmd_command,
     "control_system": control_system,
     "get_time_and_date": get_time_and_date,
     "analyze_clipboard": analyze_clipboard,
@@ -441,6 +498,128 @@ TOOL_MAP = {
     "search_web_for_answer": search_web_for_answer
 }
 
+# OpenAI/OpenRouter Compatible Tools Schema
+OPENROUTER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "open_application",
+            "description": "Launch desktop applications (Chrome, Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.)",
+            "parameters": {
+                "type": "object",
+                "properties": {"app_name": {"type": "string", "description": "Name of app to open"}},
+                "required": ["app_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "close_application",
+            "description": "Close a running desktop application",
+            "parameters": {
+                "type": "object",
+                "properties": {"app_name": {"type": "string", "description": "Name of app to close"}},
+                "required": ["app_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_cmd_command",
+            "description": "Execute a safe command in Windows Command Prompt (CMD) such as 'python --version', 'git status', 'dir', 'ipconfig'",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string", "description": "CMD command to run"}},
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web_for_answer",
+            "description": "Search the live internet for factual information, weather, stock rates, sports, definitions, news",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Search query"}},
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_or_search_website",
+            "description": "Open a website (YouTube, Google, GitHub, Instagram, WhatsApp) or search on YouTube/Google",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "website": {"type": "string", "description": "Website name or domain"},
+                    "search_query": {"type": "string", "description": "Optional search term"}
+                },
+                "required": ["website"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_system",
+            "description": "Control system settings: volume_up, volume_down, volume_mute, screenshot, lock_screen",
+            "parameters": {
+                "type": "object",
+                "properties": {"action": {"type": "string", "enum": ["volume_up", "volume_down", "volume_mute", "screenshot", "lock_screen"]}},
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_time_and_date",
+            "description": "Get current live time, day, date, and ISO timestamp",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_spotify_music",
+            "description": "Play a song, artist, album, or playlist on Spotify",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Song or artist name"}},
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_youtube_video",
+            "description": "Play a song or video on YouTube",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Video or song search query"}},
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_dev_environment",
+            "description": "Open project folder in VS Code and spawn dev server in terminal",
+            "parameters": {
+                "type": "object",
+                "properties": {"project_name": {"type": "string", "description": "Name of project folder"}}
+            }
+        }
+    }
+]
+
 
 
 # =====================================================================
@@ -459,6 +638,7 @@ class ConversationSessionManager:
         self._pending_whatsapp: Dict[str, str] = {}
         self._pending_instagram: Dict[str, str] = {}
         self._user_data: Dict[str, Dict[str, Any]] = {}
+        self._messages: Dict[str, List[Dict[str, Any]]] = {}
         self._ttl = ttl_seconds
 
     def get_or_create_chat(self, session_id: str, client, model_name: str, config):
@@ -472,6 +652,7 @@ class ConversationSessionManager:
             self._pending_whatsapp.pop(sid, None)
             self._pending_instagram.pop(sid, None)
             self._user_data.pop(sid, None)
+            self._messages.pop(sid, None)
 
         if session_id not in self._chats:
             chat = client.chats.create(model=model_name, config=config)
@@ -512,6 +693,24 @@ class ConversationSessionManager:
     def get_user_data(self, session_id: str, key: str) -> Optional[Any]:
         return self._user_data.get(session_id, {}).get(key)
 
+    def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        return self._messages.setdefault(session_id, [])
+
+    def add_message(self, session_id: str, role: str, content: str = "", tool_calls: Optional[List[Any]] = None, tool_call_id: Optional[str] = None, name: Optional[str] = None):
+        msgs = self.get_messages(session_id)
+        msg_obj: Dict[str, Any] = {"role": role}
+        if content is not None:
+            msg_obj["content"] = content
+        if tool_calls:
+            msg_obj["tool_calls"] = tool_calls
+        if tool_call_id:
+            msg_obj["tool_call_id"] = tool_call_id
+        if name:
+            msg_obj["name"] = name
+        msgs.append(msg_obj)
+        if len(msgs) > 20:
+            self._messages[session_id] = msgs[-20:]
+
     def reset_session(self, session_id: str):
         self._chats.pop(session_id, None)
         self._last_active.pop(session_id, None)
@@ -519,6 +718,7 @@ class ConversationSessionManager:
         self._pending_whatsapp.pop(session_id, None)
         self._pending_instagram.pop(session_id, None)
         self._user_data.pop(session_id, None)
+        self._messages.pop(session_id, None)
 
 # Global Session Manager Singleton
 session_manager = ConversationSessionManager()
@@ -1342,12 +1542,183 @@ def fallback_intent_parser(user_text: str, session_id: str = "default") -> Dict[
 
 
 # =====================================================================
+# OpenRouter Integration (NVIDIA / Llama / Claude / OpenAI Models)
+# =====================================================================
+
+_persistent_openrouter_client = None
+_persistent_openrouter_key = None
+
+def _get_openrouter_client(api_key: str):
+    global _persistent_openrouter_client, _persistent_openrouter_key
+    if _persistent_openrouter_client is None or _persistent_openrouter_key != api_key:
+        try:
+            import openai
+            _persistent_openrouter_client = openai.OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key,
+            )
+            _persistent_openrouter_key = api_key
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenRouter client: {e}")
+            raise
+    return _persistent_openrouter_client
+
+
+async def _process_via_openrouter(user_text: str, session_id: str, openrouter_key: str, model_name: str) -> Dict[str, Any]:
+    """
+    Executes voice command via OpenRouter with multi-turn tool calling loop.
+    Supports compound commands, system diagnostics, web search, and Gojo/Tech Lead persona.
+    """
+    client = _get_openrouter_client(openrouter_key)
+
+    # Initialize messages list with Master System Instruction & multi-turn history
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+    messages.extend(session_manager.get_messages(session_id))
+    messages.append({"role": "user", "content": user_text})
+
+    executed_actions: List[Dict[str, Any]] = []
+    last_action_res: Optional[Dict[str, Any]] = None
+    final_content: str = ""
+
+    max_tool_iterations = 3
+    iteration = 0
+
+    while iteration < max_tool_iterations:
+        iteration += 1
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model=model_name,
+                messages=messages,
+                tools=OPENROUTER_TOOLS,
+                temperature=0.7
+            ),
+            timeout=35.0
+        )
+        choice = response.choices[0]
+        assistant_msg = choice.message
+        tool_calls = assistant_msg.tool_calls or []
+        content = assistant_msg.content or ""
+
+        if not tool_calls:
+            final_content = content
+            break
+
+        # Record assistant tool call turn in messages
+        messages.append({
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments
+                    }
+                }
+                for tc in tool_calls
+            ]
+        })
+
+        for tc in tool_calls:
+            fn_name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except Exception:
+                args = {}
+
+            res_output = ""
+            act_res = None
+            if fn_name in TOOL_MAP:
+                try:
+                    raw_res = TOOL_MAP[fn_name](**args)
+                    res_output = str(raw_res)
+                    act_res = raw_res if isinstance(raw_res, dict) else {"success": True, "output": str(raw_res)}
+                except Exception as e:
+                    res_output = f"Error: {e}"
+                    act_res = {"success": False, "error": str(e)}
+            else:
+                raw_res = dispatch_action_safe(fn_name, args)
+                res_output = str(raw_res)
+                act_res = raw_res
+
+            executed_actions.append({"tool": fn_name, "args": args, "result": act_res})
+            last_action_res = act_res
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "name": fn_name,
+                "content": res_output
+            })
+
+    if not final_content:
+        final_resp = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model=model_name,
+                messages=messages,
+                temperature=0.7
+            ),
+            timeout=25.0
+        )
+        final_content = final_resp.choices[0].message.content or "Kaam ho gaya Boss!"
+
+    clean_response = final_content.replace("```json", "").replace("```", "").strip()
+
+    # Fallback to hybrid text markers if no tools were called
+    if not executed_actions:
+        if "COMMAND: PLAY_YT |" in clean_response or re.search(r'COMMAND:\s*PLAY_YT\s*\|', clean_response, re.I):
+            parts = re.split(r'COMMAND:\s*PLAY_YT\s*\|', clean_response, flags=re.I)
+            sq = parts[1].strip() if len(parts) > 1 else ""
+            sq = re.sub(r'[\r\n].*', '', sq).strip().strip('"\'')
+            if sq:
+                last_action_res = dispatch_action_safe("play_youtube_video", {"query": sq})
+                clean_response = f"YouTube par '{sq}' chala diya hai Boss."
+            else:
+                last_action_res = dispatch_action_safe("open_website", {"website": "youtube"})
+                clean_response = "YouTube open kar diya hai Boss."
+        elif "COMMAND: PLAY_SPOTIFY |" in clean_response or re.search(r'COMMAND:\s*PLAY_SPOTIFY\s*\|', clean_response, re.I):
+            parts = re.split(r'COMMAND:\s*PLAY_SPOTIFY\s*\|', clean_response, flags=re.I)
+            sq = parts[1].strip() if len(parts) > 1 else ""
+            sq = re.sub(r'[\r\n].*', '', sq).strip().strip('"\'')
+            last_action_res = dispatch_action_safe("play_spotify_music", {"query": sq})
+            clean_response = f"Spotify par '{sq}' play kar diya hai Boss." if sq else "Spotify par music chala diya hai Boss."
+        elif "COMMAND: SEARCH_INSTAGRAM |" in clean_response or re.search(r'COMMAND:\s*SEARCH_INSTAGRAM\s*\|', clean_response, re.I):
+            parts = re.split(r'COMMAND:\s*SEARCH_INSTAGRAM\s*\|', clean_response, flags=re.I)
+            sq = parts[1].strip() if len(parts) > 1 else ""
+            sq = re.sub(r'[\r\n].*', '', sq).strip().strip('"\'')
+            last_action_res = dispatch_action_safe("search_instagram_user", {"query": sq})
+            clean_response = f"Instagram par '{sq}' search kar diya hai Boss." if sq else "Instagram open kar diya hai Boss."
+        elif "ACTION: OPEN_URL_WHATSAPP" in clean_response or "ACTION: OPEN_WHATSAPP" in clean_response:
+            last_action_res = dispatch_action_safe("open_website", {"website": "whatsapp"})
+            clean_response = "WhatsApp Web open kar diya hai Boss."
+
+    # Format speech-friendly reply (remove markdown formatting symbols)
+    speech_reply = re.sub(r'[*#`_]', '', clean_response).strip()
+
+    # Record turn in session memory
+    session_manager.add_message(session_id, "user", user_text)
+    session_manager.add_message(session_id, "assistant", speech_reply)
+
+    action_payload = last_action_res
+    if not action_payload and executed_actions:
+        action_payload = executed_actions[-1]["result"]
+
+    return {
+        "reply": speech_reply,
+        "action": action_payload
+    }
+
+
+# =====================================================================
 # Main Process Voice Command Entry Point
 # =====================================================================
 
 async def process_voice_command(user_text: str, session_id: str = "default") -> Dict[str, Any]:
     """
-    Core brain connecting Voice Input -> Multi-Turn Session Memory -> Gemini Tool Calling.
+    Core brain connecting Voice Input -> Multi-Turn Session Memory -> OpenRouter / Gemini Tool Calling.
     """
     set_active_session(session_id)
     reset_session_tool_counts(session_id)
@@ -1370,6 +1741,28 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
             session_manager.set_user_data(session_id, f"fav_{attr}", val)
 
     t0 = time.perf_counter()
+
+    # Priority 1: OpenRouter (NVIDIA / Llama / Claude models via OpenRouter API)
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if openrouter_key and openrouter_key != "your_openrouter_api_key_here":
+        openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
+        try:
+            res = await _process_via_openrouter(user_text, session_id, openrouter_key, openrouter_model)
+            latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            logger.info(
+                "Processed voice command via OpenRouter",
+                extra={
+                    "session_id": session_id,
+                    "latency_ms": latency_ms,
+                    "mode": "openrouter",
+                    "model": openrouter_model,
+                    "success": True
+                }
+            )
+            return res
+        except Exception as e:
+            logger.warning(f"OpenRouter call failed ({e}). Falling back to Gemini / local engine...")
+
     api_key = os.getenv("GEMINI_API_KEY", "").strip() or GEMINI_API_KEY
     mode = "gemini_afc" if (api_key and api_key != "your_gemini_api_key_here") else "fallback"
 
