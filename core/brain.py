@@ -172,7 +172,9 @@ def dispatch_action_safe(tool_name: str, params: Optional[Dict[str, Any]] = None
     directly as a failsafe so actions always attempt execution regardless of platform.
     Includes per-turn tool call deduplication to ensure an exact function + argument pair runs only once.
     """
-    p = params or {}
+    # Normalize parameters: prune empty strings and None so {"website": "youtube", "search_query": ""}
+    # matches {"website": "youtube"} exactly during per-turn deduplication
+    p = {k: v for k, v in (params or {}).items() if v not in (None, "")}
     # Tool call deduplication: ensure exact function + argument pair runs at most once per turn
     if check_and_record_executed_action(_active_session_id, tool_name, p):
         logger.warning(
@@ -1614,6 +1616,14 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
             return {
                 "reply": reply_text.strip(),
                 "action": act_res
+            }
+
+        # Safeguard: If Gemini AFC already executed a tool, return immediately and NEVER hit fallback regex interceptors
+        tools_called_in_afc = get_session_tool_call_count(session_id)
+        if tools_called_in_afc > 0:
+            return {
+                "reply": clean_response.strip(),
+                "action": {"status": "executed", "tools_called": tools_called_in_afc}
             }
 
         # 4. General "open/kholo" Failsafe Interceptor (only runs if Gemini AFC did not invoke any tools)

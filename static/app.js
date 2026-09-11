@@ -544,6 +544,11 @@ async function sendVoiceCommand(commandText) {
         return;
     }
 
+    // Force clear text input immediately so voice or chip commands never leave text in the box
+    if (textCommandInput) {
+        textCommandInput.value = '';
+    }
+
     const cleanCommand = commandText.trim();
     console.log("[Astra] Sending command to backend:", cleanCommand, "Session:", astraSessionId);
 

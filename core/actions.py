@@ -386,6 +386,14 @@ def open_website(website: str, search_query: str = "") -> Dict[str, Any]:
     clean_site = sanitize_text(website).lower()
     clean_query = sanitize_text(search_query)
 
+    # Normalize aliases to canonical forms for strict idempotency deduplication
+    if clean_site in ["yt", "https://www.youtube.com", "http://www.youtube.com", "youtube.com", "www.youtube.com"]:
+        clean_site = "youtube"
+    elif clean_site in ["insta", "https://www.instagram.com", "http://www.instagram.com", "instagram.com", "www.instagram.com"]:
+        clean_site = "instagram"
+    elif clean_site in ["whatsapp web", "whatsappweb", "web whatsapp", "web.whatsapp.com", "https://web.whatsapp.com"]:
+        clean_site = "whatsapp"
+
     target_key = f"{clean_site}:{clean_query}" if clean_query else clean_site
     cached = _check_idempotency("open_website", target_key)
     if cached:
@@ -630,6 +638,8 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             "success": True,
             "action": "play_spotify_music",
             "query": clean_query,
+            "uri": spotify_uri,
+            "web_url": web_url,
             "message": f"Spotify Web par '{clean_query}' {item_type} search karke play kar diya hai."
         }
 
@@ -640,6 +650,8 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             "success": True,
             "action": "play_spotify_music",
             "query": clean_query,
+            "uri": spotify_uri,
+            "web_url": web_url,
             "message": f"Spotify par '{clean_query}' {item_type} search karke play kar diya hai."
         }
     except Exception:
@@ -655,6 +667,8 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             "success": True,
             "action": "play_spotify_music",
             "query": clean_query,
+            "uri": spotify_uri,
+            "web_url": web_url,
             "message": f"Spotify Web par '{clean_query}' open karke play kar diya hai."
         }
 
