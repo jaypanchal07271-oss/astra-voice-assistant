@@ -103,13 +103,13 @@ Instagram Automation Instructions:
 "When a user requests to search an Instagram user, ID, profile, or account (e.g., 'open instagram and search id shivam', 'search shivam id', 'you search shivam id', 'instagram pe virat search karo', 'search rohit on instagram', 'shivam ki id search karo'), you must extract the username/id and output exactly: COMMAND: SEARCH_INSTAGRAM | <username>. Never tell the user to manually type it into the search bar. Do not generate any conversational response until the backend confirms the search."
 
 Available Tools:
-1. open_application(app_name): Launch desktop applications (Chrome, Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.)
+1. open_application(app_name): Launch desktop applications (Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.). DO NOT use to answer questions.
 2. close_application(app_name): Close a running application
 3. execute_cmd_command(command): Execute a safe diagnostic or dev command in Windows Command Prompt (CMD) such as 'python --version', 'git status', 'dir', 'ipconfig'
 4. control_system(action): Control volume (volume_up, volume_down, volume_mute), take screenshot, lock screen
 5. get_time_and_date(): Get current time, day, date, and ISO 8601 timestamp
 6. analyze_clipboard(): Read, analyze, and summarize text currently on the Windows clipboard
-7. open_or_search_website(website, search_query): Open websites or search on YouTube / Google
+7. open_or_search_website(website, search_query): Open a website URL in the browser (e.g., YouTube, GitHub, Instagram, WhatsApp Web). STRICTLY FOR NAVIGATION ONLY. NEVER use this tool to find answers or look up information.
 8. send_whatsapp_message(contact_name, message, phone): Send WhatsApp message to a contact name using UI automation or phone prefill
 9. play_spotify_music(query): Play songs, music, or playlists on Spotify desktop/web
 10. play_youtube_video(query): Play videos or songs directly on YouTube
@@ -124,7 +124,17 @@ Available Tools:
 19. get_instagram_unread(max_chats): Check unread direct messages (DMs) on Instagram Web.
 20. send_instagram_dm(username, message): Send an automated direct message to an Instagram user (enforces 90s cooldown and 20 DMs/day ceiling).
 21. search_instagram_user(query): Search for an Instagram user profile or explore topic without sending a direct message.
-22. search_web_for_answer(query): Use this tool to search the internet for answers to real-time, factual, or general knowledge questions (weather in {_CITY}, prices, sports scores, news).
+22. search_web_for_answer(query): Search the live internet for factual answers, general knowledge, real-time facts (weather in {_CITY}, prices, sports scores, news). ALWAYS call this tool when the user asks questions or seeks information.
+
+CRITICAL SEARCH RULE (MANDATORY - SEPARATE SEARCHING FROM BROWSING):
+- NEVER open Google, Chrome, or any browser to answer questions!
+- If the user asks a factual, real-time, or general knowledge question (e.g., "Who is the CEO of Google?", "What is quantum computing?", "iPhone 16 price", "Search about black holes", "Aaj ka mausam kaisa hai"), you MUST call `search_web_for_answer(query=...)`, read the search snippets, and answer directly in chat/voice.
+- Opening a website (`open_or_search_website` or `open_application(app_name="chrome")`) is STRICTLY FORBIDDEN for answering questions. Use browser navigation ONLY when the user explicitly asks to open a browser or navigate to a URL (e.g., "Open Chrome", "Google website kholo", "Browser kholo", "Open github.com").
+- Distinguish between "finding an answer" vs "opening a website":
+  * "Search about iPhone 16" -> CALL search_web_for_answer. DO NOT OPEN GOOGLE.
+  * "Who is Elon Musk?" -> CALL search_web_for_answer. DO NOT OPEN GOOGLE.
+  * "Tell me about quantum computing" -> CALL search_web_for_answer or answer directly. DO NOT OPEN GOOGLE.
+  * "Google website kholo" or "Open Google" -> CALL open_or_search_website(website="google").
 
 Real-Time Web Search Rules (search_web_for_answer):
 - WHEN TO CALL:
@@ -135,6 +145,7 @@ Real-Time Web Search Rules (search_web_for_answer):
   2. Messaging: WhatsApp or Instagram messages (use send_whatsapp_message, send_instagram_dm).
   3. Media playback: Playing music or videos on YouTube/Spotify (use play_youtube_video, play_spotify_music).
   4. Conversational chit-chat: Greetings, small talk, "who are you", "thank you" (reply directly without search).
+  5. STRICT PROHIBITION: NEVER call open_or_search_website, open_website, or open_application to answer questions. Always call search_web_for_answer.
 
 Guidelines:
 - Keep your spoken responses concise, friendly, and natural (1-2 short sentences max).
@@ -258,7 +269,7 @@ def dispatch_action_safe(tool_name: str, params: Optional[Dict[str, Any]] = None
 
 
 def open_application(app_name: str) -> str:
-    """Open a Windows application or website (e.g., chrome, notepad, vscode, calculator, paint, whatsapp, youtube)."""
+    """Open a Windows desktop application (e.g., Notepad, VS Code, Calculator, Paint, CMD). DO NOT use this tool to answer questions or search for information."""
     _log_tool_invocation("open_application", {"app_name": app_name})
     clean = app_name.strip().lower()
     session_manager.record_last_action(_active_session_id, clean)
@@ -301,7 +312,11 @@ def analyze_clipboard() -> str:
     return res.get("message", "Clipboard analyzed")
 
 def open_or_search_website(website: str, search_query: str = "") -> str:
-    """Open a website or search on YouTube/Google."""
+    """
+    Open a website or specific URL in the web browser (navigation only).
+    STRICTLY FOR NAVIGATION: Do NOT use this tool to search for answers to questions or look up information.
+    For answering factual questions, current events, weather, or information queries, use search_web_for_answer instead.
+    """
     _log_tool_invocation("open_or_search_website", {"website": website, "search_query": search_query})
     clean_site = website.strip().lower()
     if "whatsapp" in clean_site:
@@ -504,7 +519,7 @@ OPENROUTER_TOOLS = [
         "type": "function",
         "function": {
             "name": "open_application",
-            "description": "Launch desktop applications (Chrome, Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.)",
+            "description": "Launch desktop applications (Chrome, Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.). DO NOT use this tool to answer questions.",
             "parameters": {
                 "type": "object",
                 "properties": {"app_name": {"type": "string", "description": "Name of app to open"}},
@@ -540,10 +555,10 @@ OPENROUTER_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_web_for_answer",
-            "description": "Search the live internet for factual information, weather, stock rates, sports, definitions, news",
+            "description": "Search the live internet for factual answers, general knowledge, real-time facts, weather, stock rates, sports, definitions, news directly in chat. ALWAYS use this tool when the user asks questions or seeks information.",
             "parameters": {
                 "type": "object",
-                "properties": {"query": {"type": "string", "description": "Search query"}},
+                "properties": {"query": {"type": "string", "description": "Search query for information lookup"}},
                 "required": ["query"]
             }
         }
@@ -552,12 +567,12 @@ OPENROUTER_TOOLS = [
         "type": "function",
         "function": {
             "name": "open_or_search_website",
-            "description": "Open a website (YouTube, Google, GitHub, Instagram, WhatsApp) or search on YouTube/Google",
+            "description": "Open a website URL in the web browser (e.g., YouTube, GitHub, Instagram, WhatsApp Web). STRICTLY FOR BROWSER NAVIGATION ONLY. DO NOT use this tool to look up answers to user questions or perform research.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "website": {"type": "string", "description": "Website name or domain"},
-                    "search_query": {"type": "string", "description": "Optional search term"}
+                    "website": {"type": "string", "description": "Website name or domain (e.g., 'youtube', 'github', 'instagram', 'whatsapp')"},
+                    "search_query": {"type": "string", "description": "Optional search term specifically for searching videos inside YouTube"}
                 },
                 "required": ["website"]
             }
