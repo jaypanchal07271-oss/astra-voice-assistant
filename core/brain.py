@@ -1662,6 +1662,25 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                     }
                 return {"reply": f"{app_target.capitalize()} band kar diya hai.", "action": res}
 
+    # Helper to format clean, high-naturalness response for speech synthesis
+    def _format_search_reply(user_query: str, raw_results: str) -> str:
+        if not raw_results:
+            return "Web search results: Is baare mein jaankari nahi mil saki."
+        is_news = any(k in user_query.lower() for k in ["headline", "headlines", "news", "khabar", "khabrein", "updates", "today", "aaj"])
+        titles = re.findall(r'\[\d+\]\s*(.*?)(?:\s*\(Source:.*?\)|$)', raw_results)
+        if is_news and titles:
+            top_headlines = [re.sub(r'\s*\|\s*.*$', '', t).strip() for t in titles[:3]]
+            formatted = ', '.join([f'{i+1}. {t}' for i, t in enumerate(top_headlines)])
+            return f"Web search results - Aaj ki top headlines: {formatted}."
+        
+        m_sum = re.search(r'Summary:\s*(.*?)(?:\n\[\d+\]|$)', raw_results, re.DOTALL)
+        if m_sum:
+            clean_snippet = m_sum.group(1).strip()
+            sentences = re.split(r'(?<=[.!?])\s+', clean_snippet)
+            top_sentences = " ".join(sentences[:2]).strip()
+            return f"Web search results: {top_sentences or clean_snippet[:250]}"
+        return f"Web search results:\n{raw_results[:300]}"
+
     # 17. Real-Time Web Search & Q&A
     if routed.get("intent") == "web_search":
         q_srch = routed.get("query", "").strip()
@@ -1671,6 +1690,8 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                 summary_text = res.get("results", "")
                 return {"reply": f"Web search results:\n{summary_text[:400]}", "action": res}
             return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": res}
+                return {"reply": _format_search_reply(user_text, summary_text), "action": res}
+            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": None}
 
     m_search = re.search(
         r'^(?:search\s+(?:the\s+)?web\s+(?:for\s+)?|web\s+search\s+(?:for\s+)?|search\s+online\s+(?:for\s+)?|search\s+internet\s+(?:for\s+)?|internet\s+pe\s+search\s+karo\s+|web\s+pe\s+search\s+karo\s+)(.*)',
@@ -1685,6 +1706,21 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                 summary_text = res.get("results", "")
                 return {"reply": f"Web search results:\n{summary_text[:400]}", "action": res}
             return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": res}
+                return {"reply": _format_search_reply(user_text, summary_text), "action": res}
+            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": None}
+
+    # Catch-all for open-ended inquiries/questions: Execute real-time web search instead of canned refusal
+    clean_inquiry = re.sub(r'^(?:please|zara|yaar|bhai)\s+', '', text, flags=re.I).strip()
+    words = clean_inquiry.split()
+    conversational_fillers = {"okay", "ok", "theek", "theek hai", "accha", "shukriya", "thanks", "thank you", "bye", "alvida", "chalo"}
+    if len(words) >= 2 and clean_inquiry.lower() not in conversational_fillers:
+        try:
+            res = actions.search_web_for_answer(clean_inquiry)
+            if res.get("success") and res.get("results"):
+                summary_text = res.get("results", "")
+                return {"reply": _format_search_reply(user_text, summary_text), "action": res}
+        except Exception as search_err:
+            logger.debug(f"[Fallback] Catch-all web search skipped: {search_err}")
 
     return {
         "reply": "Ji, maine suna. Kripya batayein main aapki kya madad karoon, jaise koi app kholna, screen dekhna, gaana chalana ya dev environment start karna?",
@@ -1786,8 +1822,12 @@ def is_gemini_available() -> bool:
 def trip_gemini_circuit_breaker(error_msg: str, duration: float = 30.0):
     """Trips Gemini circuit breaker to avoid repeated 429 quota delays and timeouts."""
     global _gemini_circuit_broken_until, _gemini_cooldown_reason
+    err_str = str(error_msg)
+    if "free_tier_requests" in err_str or "limit: 20" in err_str or "quota exceeded" in err_str.lower():
+        duration = max(duration, 300.0)
     # Extract retryDelay if provided by Google API, e.g. "'retryDelay': '8s'"
     delay_match = re.search(r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s?", str(error_msg), re.I)
+    delay_match = re.search(r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s?", err_str, re.I)
     if delay_match:
         try:
             parsed_delay = float(delay_match.group(1))
@@ -1796,6 +1836,7 @@ def trip_gemini_circuit_breaker(error_msg: str, duration: float = 30.0):
             pass
     _gemini_circuit_broken_until = time.time() + duration
     _gemini_cooldown_reason = str(error_msg)
+    _gemini_cooldown_reason = err_str
     logger.warning(
         f"[Brain] Gemini circuit breaker tripped for {int(duration)}s ({str(error_msg)[:120]}). "
         f"Subsequent queries will route directly to fast fallback/OpenRouter without delay."
@@ -2384,6 +2425,12 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
                 err_text = str(gemini_err)
                 if "429" in err_text or "RESOURCE_EXHAUSTED" in err_text or "retryDelay" in err_text:
                     logger.warning(f"[Gemini] Quota/rate limit 429 on '{cand_model}'. Trying next candidate model...")
+                    logger.warning(f"[Gemini] Quota/rate limit 429 on '{cand_model}'.")
+                    # If daily project-level free quota is exhausted (limit: 20 reqs/day), all models will fail. Break immediately to avoid 5-second dead freeze!
+                    if "free_tier_requests" in err_text or "limit: 20" in err_text or "quota exceeded" in err_text.lower():
+                        logger.warning("[Gemini] Daily project-level quota exhausted. Tripping circuit breaker immediately to eliminate delay.")
+                        trip_gemini_circuit_breaker(err_text, duration=300.0)
+                        break
                     continue
                 elif "not found" in err_text.lower():
                     logger.warning(f"[Gemini] Model '{cand_model}' not found. Trying fallback model...")

@@ -199,6 +199,7 @@ async def test_honest_fallback_on_total_quota_exhaustion_general_query():
     mock_429 = Exception("429 RESOURCE_EXHAUSTED: quota exceeded 20 requests per day")
 
     with patch("core.brain.session_manager.get_or_create_chat") as mock_chat_factory, \
+         patch("core.actions.search_web_for_answer", return_value={"success": False, "error": "Search unavailable"}), \
          patch.dict("os.environ", {
              "PRIMARY_PROVIDER": "gemini",
              "GEMINI_API_KEY": "AIzaSyTestKey",

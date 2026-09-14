@@ -370,6 +370,15 @@ class CommandRouter:
 
         # Check for web search
         is_search_candidate = any(kw in norm_cmd for kw in ["search", "dhoondo", "find"])
+        # Check for web search, Q&A, news, weather, headlines, or factual information queries
+        info_keywords = [
+            "search", "dhoondo", "find", "headline", "headlines", "news", "khabar", "khabrein",
+            "weather", "mausam", "temperature", "score", "scores", "match", "who is", "who was",
+            "what is", "what are", "when is", "when was", "where is", "where was", "why is", "why was",
+            "how is", "how does", "how to", "tell me about", "kya hai", "kya hain", "kaun hai",
+            "kaun tha", "kahan hai", "kab hua", "kyun hai", "batao", "bataiye", "jaankari"
+        ]
+        is_search_candidate = any(kw in norm_cmd for kw in info_keywords)
         if is_search_candidate:
             candidates.append("web_search")
 
@@ -509,12 +518,18 @@ class CommandRouter:
 
         # -----------------------------------------------------------------
         # PRIORITY 4: EXPLICIT WEB SEARCH
+        # PRIORITY 4: EXPLICIT WEB SEARCH & FACTUAL Q&A
         # -----------------------------------------------------------------
         if is_search_candidate and not has_whatsapp_kw:
             logger.info("[Router] WhatsApp detected: false")
             logger.info("[Router] Windows Search allowed: false")
             q = re.sub(r'^(?:search|dhoondo|find)\s+(?:for\s+)?', '', norm_cmd, flags=re.I).strip()
             q = re.sub(r'\b(?:search\s*karo|dhoondo|on\s+google|google\s+pe)\b', '', q, flags=re.I).strip()
+            q = re.sub(r'^(?:search\s+(?:the\s+)?(?:web|internet|online)?\s*(?:for)?|web\s+search\s+(?:for)?|dhoondo|find)\s+', '', norm_cmd, flags=re.I).strip()
+            q = re.sub(r'^(?:tell\s+me\s+(?:about)?|mujhe\s+batao|zara\s+batao)\s+', '', q, flags=re.I).strip()
+            q = re.sub(r'\b(?:search\s*karo|dhoondo|on\s+google|google\s+pe|internet\s+pe|web\s+pe)\b', '', q, flags=re.I).strip()
+            if not q:
+                q = norm_cmd
             logger.info(f"[WindowsSearch] Query: \"{q}\"")
             logger.info("[CommandRouter] Detected intent: web_search")
             logger.info("[Router] Selected intent: web_search")
