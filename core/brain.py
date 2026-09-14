@@ -86,6 +86,8 @@ CRITICAL RESPONSE RULES:
 3. For incomplete or unclear voice commands (common on mobile), politely ask for clarification:
    - User says: "Notepad"
    - You respond: "I heard you say 'Notepad'. Would you like me to open Notepad application, or did you want to do something else with it?"
+   - ZERO-SCRATCHPAD RULE: You must NEVER think out loud or output internal deliberation, scratchpads, or rule evaluations like '**Clarifying Ambiguity**', 'I am grappling with', 'Rule 3 dictates'. Perform reasoning 100% silently and output ONLY the final friendly response.
+   - NUMBERED SEARCH FOLLOW-UPS: When search results or headlines were presented with numbers (1, 2, 3), and the user sends a number ('1', '2', '3') or repeats an article title, immediately provide the details for that article or offer to open it.
 
 4. Language Requirement:
    - Always respond in natural, crisp, fluent English.
@@ -937,6 +939,252 @@ _persistent_client_key = None
 
 
 # =====================================================================
+# Web Search Parsing, Option Resolution & CoT Sanitization Helpers
+# =====================================================================
+
+def parse_search_results_to_options(raw_results: str) -> Dict[int, Dict[str, Any]]:
+    """
+    Parses compiled web search snippets into a structured options map:
+    {
+        1: {"index": 1, "title": "...", "summary": "...", "link": "..."},
+        ...
+    }
+    """
+    options: Dict[int, Dict[str, Any]] = {}
+    if not raw_results or not isinstance(raw_results, str):
+        return options
+
+    blocks = re.split(r'(?=\[\d+\])', raw_results)
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        m = re.match(r'\[(\d+)\]\s*([^\n\r]+)', block)
+        if m:
+            try:
+                idx = int(m.group(1))
+            except Exception:
+                continue
+            raw_title = m.group(2).strip()
+            title = re.sub(r'\s*\(Source:.*?\)$', '', raw_title).strip()
+            title = re.sub(r'\s*\|\s*.*$', '', title).strip()
+
+            m_sum = re.search(r'Summary:\s*([^\n\r]+)', block)
+            summary = m_sum.group(1).strip() if m_sum else ""
+
+            m_link = re.search(r'Link:\s*([^\n\r\s]+)', block)
+            link = m_link.group(1).strip() if m_link else ""
+
+            if not summary:
+                rest_lines = [l.strip() for l in block.splitlines()[1:] if l.strip() and not l.startswith("Link:")]
+                summary = " ".join(rest_lines) if rest_lines else title
+
+            options[idx] = {
+                "index": idx,
+                "title": title,
+                "summary": summary,
+                "link": link
+            }
+    return options
+
+
+def _format_search_reply(user_query: str, raw_results: str, session_id: str = "default") -> str:
+    """
+    Formats search results into a clean, spoken-friendly string and registers
+    options into session memory for follow-up selection ('1', '2', '3', 'open 3', etc.).
+    """
+    if not raw_results:
+        return "Web search results: No details found for this query."
+
+    parsed_options = parse_search_results_to_options(raw_results)
+    if parsed_options:
+        session_manager.set_user_data(session_id, "last_search_options", parsed_options)
+
+    is_news = any(k in user_query.lower() for k in ["headline", "headlines", "news", "khabar", "khabrein", "updates", "today", "aaj"])
+    titles = re.findall(r'\[\d+\]\s*(.*?)(?:\s*\(Source:.*?\)|$)', raw_results)
+    if is_news and titles:
+        top_headlines = [re.sub(r'\s*\|\s*.*$', '', t).strip() for t in titles[:3]]
+        formatted = ', '.join([f'{i+1}. {t}' for i, t in enumerate(top_headlines)])
+        return f"Web search results - Today's top headlines: {formatted}."
+
+    m_sum = re.search(r'Summary:\s*(.*?)(?:\n\[\d+\]|$)', raw_results, re.DOTALL)
+    if m_sum:
+        clean_snippet = m_sum.group(1).strip()
+        sentences = re.split(r'(?<=[.!?])\s+', clean_snippet)
+        top_sentences = " ".join(sentences[:2]).strip()
+        return f"Web search results: {top_sentences or clean_snippet[:250]}"
+    return f"Web search results:\n{raw_results[:300]}"
+
+
+def _clean_chain_of_thought(text: str) -> str:
+    """
+    Strips internal LLM deliberation, chain-of-thought scratchpads,
+    and meta-reasoning headers from spoken/assistant replies.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    cleaned = text
+
+    # 1. Strip XML-like thought/reasoning tags
+    cleaned = re.sub(r'<(?:thought|reasoning|scratchpad|internal_thinking)>[\s\S]*?</(?:thought|reasoning|scratchpad|internal_thinking)>', '', cleaned, flags=re.I)
+    cleaned = re.sub(r'<(?:thought|reasoning|scratchpad|internal_thinking)>[\s\S]*$', '', cleaned, flags=re.I)
+
+    # 2. Strip bold thought/deliberation headers and trailing thought blocks
+    cot_block = (
+        r'\*\*(?:Clarifying(?:\s+Ambiguity)?|Thinking(?:\s+Process)?|Reasoning|Internal\s+Thought|'
+        r'Analysis|Decision|Deliberation|Self-Correction|Intent\s+Clarification):?\*\*[\s\S]*?(?=\n\s*\n|[A-Z][a-z]+:|\Z)'
+    )
+    cleaned = re.sub(cot_block, '', cleaned, flags=re.I)
+
+    cot_headers = (
+        r'\*\*(?:Clarifying(?:\s+Ambiguity)?|Thinking(?:\s+Process)?|Reasoning|Internal\s+Thought|'
+        r'Analysis|Decision|Deliberation|Self-Correction|Intent\s+Clarification):?\*\*[:\s]*'
+    )
+    cleaned = re.sub(cot_headers, '', cleaned, flags=re.I)
+
+    # 3. Strip meta-deliberation sentences where the LLM talks to itself about prompt rules or inner intent
+    meta_patterns = [
+        r'\bI(?:\'m|\s+am)\s+(?:grappling|deliberating|wrestling)\s+with\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+        r'\b(?:The\s+command|The\s+query|The\s+input)\s+is\s+too\s+vague\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+        r'\bRule\s+\d+\s+dictates\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+        r'\bI(?:\'m|\s+am)\s+focusing\s+on\s+crafting\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+        r'\bI(?:\'m|\s+am)\s+aiming\s+for\s+(?:a\s+)?(?:natural|conversational)\s+phras(?:ing|e)\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+        r'\b(?:Volume,\s+reminders,\s+counting|Possibilities\s+are\s+wide-ranging)\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+        r'\bLet\s+me\s+think(?:\s+about\s+this)?\b[^\.\?\!\n]*(?:[\.\?\!\n]|$)',
+    ]
+    for pat in meta_patterns:
+        cleaned = re.sub(pat, '', cleaned, flags=re.I)
+
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
+    if not cleaned or len(cleaned) < 5 or cleaned.lower() in ["**", "*", ".", "-"]:
+        cleaned = "Could you please clarify how you would like me to assist you with that?"
+
+    return cleaned
+
+
+def _resolve_search_option_followup(user_text: str, session_id: str = "default") -> Optional[Dict[str, Any]]:
+    """
+    Checks if the user's utterance is a follow-up referring to search results:
+    - Single numbers: "1", "2", "3", "#3", "number 3", "option 3", "3rd", "third"
+    - Open commands: "open 3", "open link 3", "open third", "visit 3"
+    - Repetitions or selections of headline titles: "3. Google News - Technology - Latest.", "Google News - Technology - Latest."
+    - Confirmations following an option detail presentation: "yes", "open it", "sure", "open"
+    """
+    if not user_text or not isinstance(user_text, str):
+        return None
+
+    text = user_text.strip()
+    text_lower = text.lower()
+
+    last_selected = session_manager.get_user_data(session_id, "last_selected_search_option")
+    last_options = session_manager.get_user_data(session_id, "last_search_options") or {}
+
+    # 1. User confirming to open previously selected article: "yes", "open it", "sure", "open article", etc.
+    if last_selected:
+        affirmative_words = ["yes", "yeah", "yep", "sure", "ok", "okay", "open", "open it", "open please", "please open", "open article", "open link", "kholo", "haan", "haan open karo", "chalao", "browser me kholo"]
+        is_confirm = text_lower in affirmative_words or any(text_lower == w for w in affirmative_words) or bool(re.search(r'^(?:yes|sure|okay|ok|haan|please\s+open|open\s+it)\b', text_lower))
+        if is_confirm and not any(neg in text_lower for neg in ["no", "nah", "cancel", "don't", "dont", "mat", "stop"]):
+            session_manager.set_user_data(session_id, "last_selected_search_option", None)
+            target_link = last_selected.get("link", "")
+            title = last_selected.get("title", "article")
+            if target_link:
+                if executor_bridge.is_connected():
+                    res = dispatch_pc_tool_sync("open_website", {"website": target_link})
+                else:
+                    res = actions.open_website(target_link)
+            else:
+                if executor_bridge.is_connected():
+                    res = dispatch_pc_tool_sync("open_website", {"website": "google", "search_query": title})
+                else:
+                    res = actions.open_website("google", title)
+            return {
+                "reply": f"Opening #{last_selected.get('index', '')} ({title}) in your browser.",
+                "action": res
+            }
+
+    if not last_options:
+        return None
+
+    # 2. Check if user is referencing an option by title, number, or ordinal
+    target_idx = None
+    is_open_requested = any(kw in text_lower for kw in ["open", "visit", "launch", "kholo", "chalao", "link"])
+
+    # Clean user title (strip number prefixes like "3. ", "#3 ", and action keywords)
+    clean_user_title = re.sub(r'^(?:option|number|no\.?|#)?\s*\d+[\.\)\-:]*\s*', '', text_lower).strip().strip('.')
+    for kw in ["open", "visit", "launch", "kholo", "chalao", "link", "article"]:
+        clean_user_title = re.sub(rf'\b{kw}\b', '', clean_user_title).strip()
+
+    # 2a. Title match takes precedence when a descriptive title is spoken/sent (e.g. "3. Google News - Technology - Latest.")
+    if len(clean_user_title) >= 5:
+        for idx, opt in last_options.items():
+            opt_title = opt.get("title", "").lower().strip()
+            if clean_user_title in opt_title or opt_title in clean_user_title:
+                target_idx = idx
+                break
+
+    # 2b. Single digit or digit with optional prefix/suffix: "3", "3.", "#3", "option 3", "open 3"
+    if target_idx is None:
+        m_num = re.search(r'\b(?:option|number|no\.?|#)?\s*(\d+)(?:st|nd|rd|th)?(?:\.|\b)', text_lower)
+        if m_num:
+            try:
+                cand_idx = int(m_num.group(1))
+                if cand_idx in last_options:
+                    target_idx = cand_idx
+            except Exception:
+                pass
+
+    # 2c. Ordinal words: "first", "second", "third", "fourth", "fifth"
+    if target_idx is None:
+        ordinal_map = {
+            "first": 1, "1st": 1, "pehla": 1, "pehli": 1,
+            "second": 2, "2nd": 2, "doosra": 2, "doosri": 2,
+            "third": 3, "3rd": 3, "teesra": 3, "teesri": 3,
+            "fourth": 4, "4th": 4, "chautha": 4,
+            "fifth": 5, "5th": 5, "paanchwa": 5
+        }
+        for ord_word, o_idx in ordinal_map.items():
+            if re.search(rf'\b{ord_word}\b', text_lower):
+                if o_idx in last_options:
+                    target_idx = o_idx
+                    break
+
+    if target_idx is not None and target_idx in last_options:
+        opt = last_options[target_idx]
+        title = opt.get("title", f"Headline {target_idx}")
+        summary = opt.get("summary") or opt.get("title") or ""
+        link = opt.get("link", "")
+
+        if is_open_requested:
+            if link:
+                if executor_bridge.is_connected():
+                    res = dispatch_pc_tool_sync("open_website", {"website": link})
+                else:
+                    res = actions.open_website(link)
+            else:
+                if executor_bridge.is_connected():
+                    res = dispatch_pc_tool_sync("open_website", {"website": "google", "search_query": title})
+                else:
+                    res = actions.open_website("google", title)
+            session_manager.set_user_data(session_id, "last_selected_search_option", None)
+            return {
+                "reply": f"Opening #{target_idx} ({title}) in your browser.",
+                "action": res
+            }
+        else:
+            session_manager.set_user_data(session_id, "last_selected_search_option", opt)
+            if len(summary) > 280:
+                summary = summary[:277] + "..."
+            return {
+                "reply": f"Here are the details for #{target_idx} ({title}): {summary}. Would you like me to open the full article in your browser?",
+                "action": {"status": "search_option_selected", "option": opt}
+            }
+
+    return None
+
+
+# =====================================================================
 # Fallback Intent Parser (Offline / Rate-Limit Guard)
 # =====================================================================
 
@@ -950,6 +1198,11 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
 
     user_text_norm = transliterate_indic_command(user_text)
     text = user_text_norm.lower().strip()
+
+    # 0a. Search Follow-up Resolution (e.g. "1", "2", "3", "open 3", "yes" to open selected article)
+    search_followup = _resolve_search_option_followup(user_text, session_id=session_id)
+    if search_followup:
+        return search_followup
 
     # Multi-Turn WhatsApp Memory: User previously gave contact name, now providing message content
     pending_whatsapp = session_manager.get_pending_whatsapp(session_id)
@@ -1315,27 +1568,34 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         res = dispatch_pc_tool_sync("system_control", {"command": "lock_screen"})
         if res.get("offline"):
             return {
-                "reply": "Kshama karein, laptop executor offline hai: Laptop lock nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                "reply": "Sorry, laptop executor is offline: Could not lock laptop.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
-                "reply": "Kshama karein, laptop executor timed out: Laptop lock nahi ho saka.",
+                "reply": "Sorry, laptop executor timed out: Could not lock laptop.",
                 "action": res
             }
-        return {"reply": "Laptop lock kar diya hai.", "action": res}
+        return {"reply": "Laptop locked.", "action": res}
 
-    # 13. Google Search
-    if "google" in text:
+    # 13. Google Search / Open Google (Strict explicit triggers only)
+    is_explicit_google = (
+        text in ["google", "open google", "google open", "google kholo", "google chalao", "launch google"]
+        or bool(re.search(r'^(?:open|launch|start|kholo)\s+(?:google|google\.com)\b', text, re.I))
+        or bool(re.search(r'^(?:google\s+(?:pe|par|me)?\s*search|search\s+(?:on\s+)?google|google\s+karo)\b', text, re.I))
+        or bool(re.search(r'\b(?:search|dhoondo)\s+(?:on\s+google|google\s+par|google\s+pe)\b', text, re.I))
+    )
+    if is_explicit_google:
         query = text
-        for w in ["google", "search", "dhoondo", "find", "kholo", "open", "chalao", "start", "launch", "karo", "do", "pe", "par", "me", "mein", "please"]:
+        for w in ["google", "search", "dhoondo", "find", "kholo", "open", "chalao", "start", "launch", "karo", "do", "pe", "par", "me", "mein", "please", "on"]:
             query = re.sub(rf'\b{w}\b', '', query, flags=re.IGNORECASE).strip()
         query = re.sub(r'\s+', ' ', query).strip()
         if executor_bridge.is_connected():
             res = dispatch_pc_tool_sync("open_website", {"website": "google", "search_query": query})
         else:
             res = actions.open_website("google", query)
-        return {"reply": f"Google par search kar diya hai: {query}" if query else "Google open kar diya hai.", "action": res}
+        reply_msg = f"Searching Google for '{query}'." if query else "Opened Google for you."
+        return {"reply": reply_msg, "action": res}
 
     # 13b. Instagram Direct Message (DM) Automation & Reading
     has_insta_kw = (
@@ -1650,34 +1910,15 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                     }
                 elif res.get("timeout"):
                     return {
-                        "reply": f"Kshama karein, laptop executor timed out: '{app_target.capitalize()}' band nahi ho saka.",
+                        "reply": f"Sorry, laptop executor timed out: Could not close '{app_target.capitalize()}'.",
                         "action": res
                     }
                 elif not res.get("success"):
                     return {
-                        "reply": f"Kshama karein, '{app_target.capitalize()}' band nahi ho saka: {res.get('message', 'Application nahi mila.')}",
+                        "reply": f"Sorry, could not close '{app_target.capitalize()}': {res.get('message', 'Application not found.')}",
                         "action": res
                     }
-                return {"reply": f"{app_target.capitalize()} band kar diya hai.", "action": res}
-
-    # Helper to format clean, high-naturalness response for speech synthesis
-    def _format_search_reply(user_query: str, raw_results: str) -> str:
-        if not raw_results:
-            return "Web search results: No details found for this query."
-        is_news = any(k in user_query.lower() for k in ["headline", "headlines", "news", "khabar", "khabrein", "updates", "today", "aaj"])
-        titles = re.findall(r'\[\d+\]\s*(.*?)(?:\s*\(Source:.*?\)|$)', raw_results)
-        if is_news and titles:
-            top_headlines = [re.sub(r'\s*\|\s*.*$', '', t).strip() for t in titles[:3]]
-            formatted = ', '.join([f'{i+1}. {t}' for i, t in enumerate(top_headlines)])
-            return f"Web search results - Today's top headlines: {formatted}."
-        
-        m_sum = re.search(r'Summary:\s*(.*?)(?:\n\[\d+\]|$)', raw_results, re.DOTALL)
-        if m_sum:
-            clean_snippet = m_sum.group(1).strip()
-            sentences = re.split(r'(?<=[.!?])\s+', clean_snippet)
-            top_sentences = " ".join(sentences[:2]).strip()
-            return f"Web search results: {top_sentences or clean_snippet[:250]}"
-        return f"Web search results:\n{raw_results[:300]}"
+                return {"reply": f"Closed {app_target.capitalize()}.", "action": res}
 
     # 17. Real-Time Web Search & Q&A
     if routed.get("intent") == "web_search":
@@ -1686,7 +1927,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             res = actions.search_web_for_answer(q_srch)
             if res.get("success"):
                 summary_text = res.get("results", "")
-                return {"reply": _format_search_reply(user_text, summary_text), "action": res}
+                return {"reply": _format_search_reply(user_text, summary_text, session_id=session_id), "action": res}
             return {"reply": f"Web search could not be completed: {res.get('error', 'Error')}", "action": None}
 
     m_search = re.search(
@@ -1700,7 +1941,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             res = actions.search_web_for_answer(q_srch)
             if res.get("success"):
                 summary_text = res.get("results", "")
-                return {"reply": _format_search_reply(user_text, summary_text), "action": res}
+                return {"reply": _format_search_reply(user_text, summary_text, session_id=session_id), "action": res}
             return {"reply": f"Web search could not be completed: {res.get('error', 'Error')}", "action": None}
 
     # Catch-all for open-ended inquiries/questions: Execute real-time web search instead of canned refusal
@@ -1712,7 +1953,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             res = actions.search_web_for_answer(clean_inquiry)
             if res.get("success") and res.get("results"):
                 summary_text = res.get("results", "")
-                return {"reply": _format_search_reply(user_text, summary_text), "action": res}
+                return {"reply": _format_search_reply(user_text, summary_text, session_id=session_id), "action": res}
         except Exception as search_err:
             logger.debug(f"[Fallback] Catch-all web search skipped: {search_err}")
 
@@ -1966,6 +2207,10 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
 
             executed_actions.append({"tool": fn_name, "args": args, "result": act_res})
             last_action_res = act_res
+            if fn_name == "search_web_for_answer" and isinstance(act_res, dict) and act_res.get("results"):
+                parsed_opts = parse_search_results_to_options(act_res.get("results", ""))
+                if parsed_opts:
+                    session_manager.set_user_data(session_id, "last_search_options", parsed_opts)
 
             messages.append({
                 "role": "tool",
@@ -1987,6 +2232,7 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
         final_content = final_resp.choices[0].message.content or "Kaam ho gaya Boss!"
 
     clean_response = final_content.replace("```json", "").replace("```", "").strip()
+    clean_response = _clean_chain_of_thought(clean_response)
 
     # Fallback to hybrid text markers if no tools were called
     if not executed_actions:
@@ -2018,6 +2264,7 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
 
     # Format speech-friendly reply (remove markdown formatting symbols)
     speech_reply = re.sub(r'[*#`_]', '', clean_response).strip()
+    speech_reply = _clean_chain_of_thought(speech_reply)
 
     # Record turn in session memory
     session_manager.add_message(session_id, "user", user_text)
@@ -2233,7 +2480,12 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
     reset_session_tool_counts(session_id)
     reset_executed_actions(session_id)
     if not user_text or not user_text.strip():
-        return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+        return {"reply": "I could not hear your voice clearly. Please speak again.", "action": None}
+
+    # 0. Check search option follow-up (e.g. "1", "2", "3", "open 3", "yes" to open selected article)
+    search_followup = _resolve_search_option_followup(user_text, session_id=session_id)
+    if search_followup:
+        return search_followup
 
     # Pre-parse memory / user data to ensure persistent session memory across both AFC and fallback
     m_name = re.search(r'mera naam\s+([a-zA-Z\s]+?)\s+(?:hai|rakho|note karo)\b', user_text, re.I)
@@ -2442,6 +2694,7 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
 
         # Backend Failsafe: Clean markdown backticks and parse structured JSON
         clean_response = ai_response.replace("```json", "").replace("```", "").strip()
+        clean_response = _clean_chain_of_thought(clean_response)
         action_data = {}
 
         # 1. Attempt strict JSON parsing first (Safest for Gemini structured outputs)
@@ -2604,9 +2857,9 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             q_web = action_data.get("query", "")
             act_res = actions.search_web_for_answer(query=q_web)
             if act_res.get("success"):
-                reply_text = act_res.get("results", "Web search results retrieved.")
+                reply_text = _format_search_reply(user_text, act_res.get("results", ""), session_id=session_id)
             else:
-                reply_text = f"Kshama karein, search nahi ho saka: {act_res.get('error', 'Error')}"
+                reply_text = f"Sorry, search could not be completed: {act_res.get('error', 'Error')}"
             return {"reply": reply_text, "action": act_res}
 
         elif act_type in ["open_website", "open_url", "open_or_search_website"]:
@@ -2708,7 +2961,7 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
                         "action": act_res
                     }
 
-        reply_text = clean_response
+        reply_text = _clean_chain_of_thought(clean_response)
 
         latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.info(
