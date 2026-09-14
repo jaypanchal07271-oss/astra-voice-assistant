@@ -8,8 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 load_dotenv(ENV_PATH)
 
-# Gemini API Key
+# Gemini & AI Provider Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+PRIMARY_PROVIDER = os.getenv("PRIMARY_PROVIDER", os.getenv("AI_PROVIDER", "gemini")).strip().lower()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
+USE_GEMINI_LIVE = os.getenv("USE_GEMINI_LIVE", "false").strip().lower() in ("true", "1", "yes")
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview").strip() or "gemini-3.1-flash-live-preview"
 
 # Security & Authentication Token
 ASTRA_AUTH_TOKEN = os.getenv("ASTRA_AUTH_TOKEN", "").strip()
@@ -34,14 +39,46 @@ if not ASTRA_AUTH_TOKEN:
 # Voice configuration (Edge TTS Neural Voices & Tuning)
 VOICE_HINDI = os.getenv("VOICE_HINDI", "hi-IN-SwaraNeural")
 VOICE_ENGLISH = os.getenv("VOICE_ENGLISH", "en-IN-NeerjaNeural")
-TTS_RATE = os.getenv("TTS_RATE", "+10%")
-TTS_PITCH = os.getenv("TTS_PITCH", "+2Hz")
+TTS_RATE = os.getenv("TTS_RATE", "+18%")
+TTS_PITCH = os.getenv("TTS_PITCH", "+0Hz")
+
+def _safe_float_env(var_name: str, default: float) -> float:
+    raw = os.getenv(var_name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return default
+
+# Request & Operation Timeout Configurations (Seconds)
+LLM_TIMEOUT = _safe_float_env("LLM_TIMEOUT", 30.0)
+TTS_TIMEOUT = _safe_float_env("TTS_TIMEOUT", 15.0)
+VOICE_TRANSCRIPTION_TIMEOUT = _safe_float_env("VOICE_TRANSCRIPTION_TIMEOUT", 15.0)
 
 # Server Host & Port (Default to localhost 127.0.0.1 for local security)
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
+
+# SSL / HTTPS Configuration (Native Local HTTPS Support)
+_raw_key = os.getenv("SSL_KEYFILE", "").strip()
+_raw_cert = os.getenv("SSL_CERTFILE", "").strip()
+
+def _resolve_ssl_path(p: str) -> Optional[str]:
+    if not p:
+        return None
+    path_obj = Path(p)
+    if not path_obj.is_absolute():
+        path_obj = BASE_DIR / path_obj
+    return str(path_obj) if path_obj.exists() else None
+
+SSL_KEYFILE = _resolve_ssl_path(_raw_key)
+SSL_CERTFILE = _resolve_ssl_path(_raw_cert)
+USE_SSL = bool(SSL_KEYFILE and SSL_CERTFILE)
+
 _executor_host = "127.0.0.1" if HOST == "0.0.0.0" else HOST
-EXECUTOR_SERVER_URL = os.getenv("EXECUTOR_SERVER_URL", f"ws://{_executor_host}:{PORT}/ws/executor")
+_ws_scheme = "wss" if USE_SSL else "ws"
+EXECUTOR_SERVER_URL = os.getenv("EXECUTOR_SERVER_URL", f"{_ws_scheme}://{_executor_host}:{PORT}/ws/executor")
 
 def _detect_lan_ip():
     try:

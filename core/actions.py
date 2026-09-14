@@ -75,6 +75,14 @@ COMMON_APP_MAP = {
     "task manager": "taskmgr.exe",
     "taskmgr": "taskmgr.exe",
     "settings": "ms-settings:",
+    "windows settings": "ms-settings:",
+    "wifi settings": "ms-settings:network-wifi",
+    "wi-fi settings": "ms-settings:network-wifi",
+    "bluetooth settings": "ms-settings:bluetooth",
+    "display settings": "ms-settings:display",
+    "sound settings": "ms-settings:sound",
+    "audio settings": "ms-settings:sound",
+    "network settings": "ms-settings:network",
     "word": "winword.exe",
     "excel": "excel.exe",
     "powerpoint": "powerpnt.exe",
@@ -183,6 +191,8 @@ def open_app(app_name: str) -> Dict[str, Any]:
             _record_idempotency("open_app", safe_name, res)
         return res
 
+    app_msg = f"I have successfully opened {app_name} for you. The application should now be visible on your screen. Is there anything specific you'd like to do with it?"
+
     # 1. Check direct common mapping
     if safe_name in COMMON_APP_MAP:
         target = COMMON_APP_MAP[safe_name]
@@ -190,21 +200,21 @@ def open_app(app_name: str) -> Dict[str, Any]:
             # 1a. Protocol URI (calculator:, microsoft.windows.camera:, ms-settings:, etc.)
             if ":" in target:
                 os.startfile(target)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                 _record_idempotency("open_app", safe_name, res)
                 return res
 
             # 1b. Command Prompt / Terminal
             if safe_name in ["cmd", "command prompt", "terminal"]:
                 subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe"], shell=False)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                 _record_idempotency("open_app", safe_name, res)
                 return res
 
             # 1c. Notepad
             if safe_name == "notepad":
                 subprocess.Popen(["notepad.exe"], shell=False)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                 _record_idempotency("open_app", safe_name, res)
                 return res
 
@@ -213,7 +223,7 @@ def open_app(app_name: str) -> Dict[str, Any]:
                 code_path = shutil.which("code.cmd") or shutil.which("code")
                 if code_path:
                     subprocess.Popen(["cmd.exe", "/c", code_path], shell=False)
-                    res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+                    res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                     _record_idempotency("open_app", safe_name, res)
                     return res
                 local_app_data = os.getenv("LOCALAPPDATA", "")
@@ -221,18 +231,18 @@ def open_app(app_name: str) -> Dict[str, Any]:
                     code_exe = Path(local_app_data) / "Programs" / "Microsoft VS Code" / "Code.exe"
                     if code_exe.exists():
                         subprocess.Popen([str(code_exe)], shell=False)
-                        res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+                        res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                         _record_idempotency("open_app", safe_name, res)
                         return res
                 subprocess.Popen(["cmd.exe", "/c", "code"], shell=False)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                 _record_idempotency("open_app", safe_name, res)
                 return res
 
             # 1e. Try Windows Shell execution (resolves Registry App Paths & System PATH)
             try:
                 os.startfile(target)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} khol diya hai."}
+                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                 _record_idempotency("open_app", safe_name, res)
                 return res
             except Exception:
@@ -242,31 +252,31 @@ def open_app(app_name: str) -> Dict[str, Any]:
             resolved_bin = shutil.which(target) or shutil.which(f"{target}.exe")
             if resolved_bin:
                 subprocess.Popen([resolved_bin], shell=False)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} khol diya hai."}
+                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                 _record_idempotency("open_app", safe_name, res)
                 return res
         except Exception:
             pass
 
-    # 2. Check installed applications via AppOpener list without fuzzy match hallucination
-    try:
-        from AppOpener import give_appnames, open as app_open
-        installed_apps = give_appnames()
-        if installed_apps and safe_name in installed_apps:
-            import contextlib
-            with contextlib.redirect_stdout(sys.stderr):
-                app_open(safe_name, match_closest=False)
-            res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
-            _record_idempotency("open_app", safe_name, res)
-            return res
-    except Exception:
-        pass
+    # 2. (Disabled: Slow AppOpener scanning replaced with instant native os.startfile / shutil.which)
+    # try:
+    #     from AppOpener import give_appnames, open as app_open
+    #     installed_apps = give_appnames()
+    #     if installed_apps and safe_name in installed_apps:
+    #         import contextlib
+    #         with contextlib.redirect_stdout(sys.stderr):
+    #             app_open(safe_name, match_closest=False)
+    #         res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
+    #         _record_idempotency("open_app", safe_name, res)
+    #         return res
+    # except Exception:
+    #     pass
 
     # 3. Try direct os.startfile for Windows registered executables / App Paths
     for candidate in [f"{safe_name}.exe", safe_name]:
         try:
             os.startfile(candidate)
-            res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+            res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
             _record_idempotency("open_app", safe_name, res)
             return res
         except Exception:
@@ -277,7 +287,7 @@ def open_app(app_name: str) -> Dict[str, Any]:
     if resolved:
         try:
             subprocess.Popen([resolved], shell=False)
-            res = {"success": True, "action": "open_app", "app": app_name, "message": f"{app_name} open kar diya hai."}
+            res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
             _record_idempotency("open_app", safe_name, res)
             return res
         except Exception:
@@ -304,7 +314,7 @@ def close_app(app_name: str) -> Dict[str, Any]:
         import contextlib
         with contextlib.redirect_stdout(sys.stderr):
             app_close(safe_name, match_closest=True, throw_error=True)
-        return {"success": True, "action": "close_app", "app": app_name, "message": f"{app_name} band kar diya hai."}
+        return {"success": True, "action": "close_app", "app": app_name, "message": f"Zaroor! Maine {app_name} ko band kar diya hai. Kya kuch aur manage karna hai?"}
     except Exception:
         pass
 
@@ -314,7 +324,7 @@ def close_app(app_name: str) -> Dict[str, Any]:
         clean_proc = sanitize_filename(proc_name)
         res = subprocess.run(["taskkill", "/F", "/IM", clean_proc], capture_output=True, text=True, check=False)
         if res.returncode == 0:
-            return {"success": True, "action": "close_app", "app": app_name, "message": f"{app_name} ko band kar diya hai."}
+            return {"success": True, "action": "close_app", "app": app_name, "message": f"Zaroor! Maine {app_name} ko band kar diya hai. Kya kuch aur manage karna hai?"}
         return {"success": False, "action": "close_app", "app": app_name, "message": f"{app_name} chal nahi raha tha ya band nahi ho paya."}
     except Exception as e:
         return {"success": False, "action": "close_app", "app": app_name, "error": str(e), "message": f"{app_name} band nahi ho paya."}
@@ -1015,7 +1025,7 @@ def analyze_screen(prompt: str = "") -> Dict[str, Any]:
         # 2. Query Gemini Vision
         client = genai.Client(api_key=api_key)
         user_prompt = prompt.strip() if prompt else "Describe what is currently visible on the screen and summarize any open apps, errors, or important details in 2 concise sentences."
-        model_name = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip() or "gemini-3.6-flash"
 
         response = client.models.generate_content(
             model=model_name,
@@ -1443,39 +1453,117 @@ def send_whatsapp_reply(chat_name: str, message: str) -> Dict[str, Any]:
         }
 
 
+# --- ASTRA UPGRADE: ROBUST MULTI-LAYERED WHATSAPP AUTOMATION START ---
 @log_tool_call()
-def send_whatsapp_message(contact_name: str = "", message: str = "", phone: str = "") -> Dict[str, Any]:
+def send_whatsapp_message(
+    phone_number: str = "",
+    message: str = "",
+    is_mobile: bool = False,
+    contact_name: str = "",
+    phone: str = "",
+    **kwargs
+) -> Dict[str, Any]:
     """
-    Sends a WhatsApp message by contact name using UI automation (PyAutoGUI + Pyperclip).
-    If UI automation encounters issues or fails, automatically falls back to fail-proof WhatsApp Web URL pre-fill.
+    Sends a WhatsApp message using a platform-aware multi-layered strategy:
+      - Mobile (is_mobile=True): Native WhatsApp app deep link (whatsapp://send?phone=...&text=...).
+      - Desktop (is_mobile=False):
+        * If contact_name is non-numeric, tries Layer 1/2 window reuse & atomic clipboard, and Layer 3 Playwright.
+        * Desktop-safe fallback via WhatsApp Web (https://web.whatsapp.com/send?phone=...&text=...),
+          waits for load (time.sleep(15)), and presses Enter via pyautogui.
     """
-    clean_contact = contact_name.strip() if contact_name else ""
+    clean_target = (phone_number or phone or contact_name or "").strip()
     clean_msg = message.strip() if message else ""
-    clean_phone = phone.strip() if phone else ""
 
-    # Detect if contact_name is actually a phone number
-    digits = "".join(filter(str.isdigit, clean_contact))
-    if digits and len(digits) >= 10:
-        clean_phone = digits
+    if not clean_msg:
+        target = clean_target or "contact"
+        return {
+            "success": False,
+            "action": "send_whatsapp_message",
+            "error": "Message content cannot be empty.",
+            "message": f"Boss, {target} ko kya message bhejna hai?"
+        }
 
-    if clean_contact and not clean_phone:
+    # If on desktop and target is a non-numeric contact name, attempt desktop UI / Playwright automation
+    digits = "".join(filter(str.isdigit, clean_target))
+    is_pure_contact_name = bool(clean_target and not digits)
+
+    if not is_mobile and is_pure_contact_name:
         try:
             from core import whatsapp_agent
-            res = whatsapp_agent.send_whatsapp_message_ui(contact_name=clean_contact, message=clean_msg)
+            res = whatsapp_agent.send_whatsapp_message_ui(contact_name=clean_target, message=clean_msg)
             if res.get("success"):
                 return res
-            logger.warning(f"WhatsApp UI automation returned failure: {res.get('error')}. Engaging fail-proof browser URL fallback.")
-        except Exception as e:
-            logger.warning(f"WhatsApp UI automation exception: {e}. Engaging fail-proof browser URL fallback.")
+            # If explicit contact error, rate limiting, or QR requirement, do not fall back to prefill URL
+            if res.get("rate_limited") or res.get("status") == "qr_required":
+                return res
+            if "Conjunctions cannot be used" in res.get("error", "") or "nahi mila" in res.get("error", ""):
+                return res
 
-    # Fail-Proof Fallback: Use direct WhatsApp Web URL with pre-filled text
-    fallback_res = send_whatsapp(phone=clean_phone, message=clean_msg)
-    target_info = f"'{clean_contact}'" if clean_contact else (f"number +{clean_phone}" if clean_phone else "WhatsApp")
-    fallback_res["message"] = (
-        f"{target_info} ke liye WhatsApp Web open kar diya hai. Message pre-filled hai, bas Enter dabakar send karein."
-    )
-    fallback_res["fallback_engaged"] = True
-    return fallback_res
+            logger.warning(
+                f"[WhatsApp] Layer 1/2 UI automation returned failure: {res.get('error')}. "
+                "Attempting Layer 3 Playwright fallback..."
+            )
+        except Exception as e:
+            logger.warning(f"[WhatsApp] Layer 1/2 UI automation exception: {e}. Attempting Layer 3 Playwright fallback...")
+
+        # Layer 3: Playwright fallback with smart selector strategies
+        try:
+            from core import whatsapp_agent
+            playwright_res = whatsapp_agent.send_reply(chat_name=clean_target, message=clean_msg)
+            if playwright_res.get("success"):
+                return {
+                    "success": True,
+                    "action": "send_whatsapp_message",
+                    "contact_name": clean_target,
+                    "message": f"WhatsApp par '{clean_target}' ko Playwright dwara message bhej diya gaya hai: '{clean_msg}'.",
+                    "status": "sent",
+                    "verification": playwright_res.get("verification", "playwright_success")
+                }
+        except Exception as pw_err:
+            logger.warning(f"[WhatsApp] Layer 3 Playwright fallback error: {pw_err}. Engaging Layer 4 URL fallback.")
+
+    clean_number = clean_target.replace('+', '').replace(' ', '').replace('-', '')
+    encoded_message = urllib.parse.quote(clean_msg)
+
+    if is_mobile:
+        # Native WhatsApp app deep link — reliable on mobile only
+        url = f"whatsapp://send?phone={clean_number}&text={encoded_message}"
+        webbrowser.open(url)
+        return {
+            "success": True,
+            "action": "send_whatsapp_message",
+            "url": url,
+            "is_mobile": True,
+            "message": f"WhatsApp par message bhejne ke liye native app open kar diya hai: '{clean_msg}'"
+        }
+    else:
+        # If 10-digit Indian phone number without country code, prepend 91 for WhatsApp Web
+        if len(clean_number) == 10:
+            clean_number = "91" + clean_number
+        # Desktop-safe fallback via WhatsApp Web (no OS protocol resolution needed)
+        url = f"https://web.whatsapp.com/send?phone={clean_number}&text={encoded_message}"
+        webbrowser.open(url)
+        try:
+            _launch_browser_url(url)
+        except Exception:
+            pass
+        time.sleep(15)  # allow WhatsApp Web + chat to fully load
+        try:
+            import pyautogui
+            pyautogui.press('enter')
+        except Exception:
+            pass  # leave chat pre-filled for manual send if pyautogui unavailable
+
+        target_info = f"'{clean_target}'" if clean_target else "WhatsApp"
+        return {
+            "success": True,
+            "action": "send_whatsapp_message",
+            "url": url,
+            "is_mobile": False,
+            "fallback_engaged": True,
+            "message": f"{target_info} ke liye WhatsApp Web open kar diya hai. Message pre-filled hai, bas Enter dabakar send karein, Boss!"
+        }
+# --- ASTRA UPGRADE: ROBUST MULTI-LAYERED WHATSAPP AUTOMATION END ---
 
 
 @log_tool_call()
@@ -1548,6 +1636,11 @@ def search_instagram_user(query: str = "") -> Dict[str, Any]:
     Launches the URL directly in the user's active Chrome browser window (with logged-in user profile).
     """
     clean_query = sanitize_text(query).strip().lstrip("@")
+    target_key = clean_query.lower() if clean_query else "_default_"
+    cached = _check_idempotency("search_instagram_user", target_key)
+    if cached:
+        return cached
+
     if clean_query:
         target_url = f"https://www.instagram.com/{clean_query}/"
         msg = f"Instagram par '{clean_query}' ki profile open kar di hai."
@@ -1556,7 +1649,7 @@ def search_instagram_user(query: str = "") -> Dict[str, Any]:
         msg = "Instagram open kar diya hai."
 
     _launch_browser_url(target_url)
-    return {
+    res = {
         "success": True,
         "action": "search_instagram_user",
         "query": clean_query,
@@ -1564,6 +1657,8 @@ def search_instagram_user(query: str = "") -> Dict[str, Any]:
         "url": target_url,
         "message": msg
     }
+    _record_idempotency("search_instagram_user", target_key, res)
+    return res
 
 
 # =====================================================================

@@ -106,7 +106,19 @@ async def run_executor_client(
 
         try:
             logger.info(f"Connecting to Astra server at {base_url}...")
-            async with websockets.connect(ws_url) as ws:
+            ws_kwargs = {}
+            if ws_url.startswith("wss://"):
+                import ssl
+                ssl_ctx = ssl.create_default_context()
+                cert_file = os.getenv("SSL_CERTFILE")
+                if cert_file and os.path.exists(cert_file):
+                    ssl_ctx.load_verify_locations(cert_file)
+                else:
+                    ssl_ctx.check_hostname = False
+                    ssl_ctx.verify_mode = ssl.CERT_NONE
+                ws_kwargs["ssl"] = ssl_ctx
+
+            async with websockets.connect(ws_url, **ws_kwargs) as ws:
                 logger.info("Connected to Astra server as Local PC Executor.")
                 retry_delay = 1.0
                 retries = 0

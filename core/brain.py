@@ -11,9 +11,15 @@ import time
 import json
 import asyncio
 import threading
-from typing import Dict, Any, Optional
+from contextvars import ContextVar
+from typing import Dict, Any, Optional, List, Callable, Sequence
 from pathlib import Path
 from dotenv import load_dotenv
+import warnings
+
+# Suppress harmless Python 3.14 deprecation warnings & Google SDK advisory notices
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
 
 # Ensure .env is loaded
 from config import GEMINI_API_KEY
@@ -22,6 +28,19 @@ from core.logger import get_logger, redact_params
 from core.executor_bridge import dispatch_pc_tool_sync, dispatch_pc_tool_async, executor_bridge
 
 logger = get_logger("astra.brain")
+
+# --- ASTRA UPGRADE: MEM0 & MCP IMPORTS START ---
+from core.memory import search_relevant_memories, add_interaction_memory_async
+from core.mcp_client import discover_mcp_tools, get_dynamic_mcp_tools_sync
+# --- ASTRA UPGRADE: MEM0 & MCP IMPORTS END ---
+from core.command_router import (
+    CommandRouter,
+    extract_whatsapp_parameters,
+    transliterate_indic_command,
+    CONJUNCTIONS,
+    NON_CONTACT_WORDS
+)
+
 
 def load_user_profile() -> Dict[str, Any]:
     """Loads user_profile.json from workspace root if available."""
@@ -50,13 +69,41 @@ _CALL_NAME = _USER_PROFILE.get("call_name", "Boss")
 _CITY = _USER_PROFILE.get("city", "Ahmedabad")
 _ROLE = _USER_PROFILE.get("role", "Tech Lead & AI Developer")
 
-SYSTEM_INSTRUCTION = f"""You are 'Astra', the elite, ultra-capable AI desktop companion and executive assistant for {_BOSS_NAME} ('{_CALL_NAME}'), who is a {_ROLE} based in {_CITY}.
-You understand Hindi, English, and Hinglish.
+SYSTEM_INSTRUCTION = f"""You are Astra, an intelligent multilingual voice assistant (Hindi, English, Hinglish) for PC and mobile devices, companion to {_BOSS_NAME} ('{_CALL_NAME}'), who is a {_ROLE} based in {_CITY}.
 
-Persona & Vibe:
-- Vibe: Confident Tech Lead / Satoru Gojo energy — charismatic, razor-sharp, chill, and deeply capable. Zero robotic talk, zero corporate boilerplate, zero groveling.
-- Address {_BOSS_NAME} naturally as '{_CALL_NAME}'.
-- Language: Natural fluent Hinglish (modern conversational Hindi + English mix) or clean English when asked in English.
+CRITICAL RESPONSE RULES:
+
+1. NEVER use single-word replies like "Okay", "Done", "Yes", "Haan", "Theek hai". Always respond with complete, conversational sentences (minimum 15-25 words).
+   - ❌ BAD: "Done." / "Okay." / "Haan."
+   - ✅ GOOD: "Bilkul, maine aapke liye Notepad open kar diya hai {_CALL_NAME}. Kya aap kuch aur karna chahte hain?"
+   - ✅ GOOD: "Zaroor! Main abhi aapke liye Chrome browser khol raha hoon."
+   - ✅ GOOD: "Maine aapki baat samajh li hai {_CALL_NAME}. Ye raha aapka jawab..."
+
+2. When executing any tool/action, ALWAYS provide a detailed confirmation:
+   - ❌ BAD: "Notepad open kar diya."
+   - ✅ GOOD: "I have successfully opened Notepad for you. You can now start typing your notes. Is there anything else you'd like me to help you with?"
+   - ✅ GOOD: "Bilkul! Main ne aapke liye Notepad application open kar di hai. Ab aap isme apni notes likh sakte hain. Kya aapko kuch aur chahiye?"
+
+3. For incomplete or unclear voice commands (common on mobile), politely ask for clarification:
+   - User says: "Notepad"
+   - You respond: "I heard you say 'Notepad'. Would you like me to open Notepad application, or did you want to do something else with it?"
+
+4. Match the user's language:
+   - Hindi/Hinglish input → Hindi/Hinglish response (use Roman script)
+   - English input → English response
+   - Never mix languages awkwardly
+
+5. When tools fail, explain what went wrong and offer alternatives:
+   - ❌ BAD: "Error."
+   - ✅ GOOD: "I'm sorry, I couldn't open that application. It seems like it's not installed on your system. Would you like me to help you find an alternative?"
+
+6. Be warm and conversational. Use phrases like:
+   - "Certainly!", "Of course!", "I'd be happy to help!", "Zaroor!", "Bilkul!", "Main khushi se aapki madad karunga!"
+
+7. Current Context:
+   - Current Date/Time: {{current_datetime}}
+   - User's Device: {{user_device}}
+   - Assistant Name: Astra
 
 Dual Nature:
 1. Intelligence: You have the deep knowledge and clarity of ChatGPT/Gemini. Give direct, insightful, natural answers to conceptual, coding, and life questions.
@@ -94,13 +141,13 @@ Required Exact Output Format:
 }}
 
 YouTube Automation Instructions:
-"When a user requests to play a song or video on YouTube or YT (e.g., 'open yt and play specialz', 'play specialz on yt', 'play lofi beats on youtube'), you must extract the search topic and output exactly: COMMAND: PLAY_YT | <search_query>. If the user gives no specific topic (e.g. 'play yt', 'open yt', 'play video'), call open_or_search_website(website='youtube'). Do not generate any conversational response like 'Playing now' until the backend confirms the action is complete."
+- When a user requests to play a song or video on YouTube or YT (e.g., 'open yt and play specialz', 'play specialz on yt', 'play lofi beats on youtube'), call the play_youtube_video tool with query=<search_query>. If the user gives no specific topic (e.g. 'play yt', 'open yt', 'play video'), call open_or_search_website(website='youtube').
 
 Spotify Automation Instructions:
-"When a user requests to play a song, music, or playlist on Spotify (e.g., 'open spotify and play music', 'play relax songs on spotify', 'spotify pe lofi playlist chalao', 'play playlist on spotify', 'play music'), you must extract the search topic and output exactly: COMMAND: PLAY_SPOTIFY | <search_query>. If the user gives no specific topic or asks generally to play music/spotify, output: COMMAND: PLAY_SPOTIFY | . Do not generate any conversational response like 'Playing now' until the backend confirms the action is complete."
+- When a user requests to play a song, music, or playlist on Spotify (e.g., 'open spotify and play music', 'play relax songs on spotify', 'spotify pe lofi playlist chalao', 'play playlist on spotify', 'play music'), call the play_spotify_music tool with query=<search_query>. If the user gives no specific topic or asks generally to play music/spotify, call play_spotify_music(query='').
 
 Instagram Automation Instructions:
-"When a user requests to search an Instagram user, ID, profile, or account (e.g., 'open instagram and search id shivam', 'search shivam id', 'you search shivam id', 'instagram pe virat search karo', 'search rohit on instagram', 'shivam ki id search karo'), you must extract the username/id and output exactly: COMMAND: SEARCH_INSTAGRAM | <username>. Never tell the user to manually type it into the search bar. Do not generate any conversational response until the backend confirms the search."
+- When a user requests to search an Instagram user, ID, profile, or account (e.g., 'open instagram and search id shivam', 'search shivam id', 'you search shivam id', 'instagram pe virat search karo', 'search rohit on instagram', 'shivam ki id search karo'), call the search_instagram_user tool with query=<username>. Never tell the user to manually type it into the search bar.
 
 Available Tools:
 1. open_application(app_name): Launch desktop applications (Notepad, VS Code, Calculator, Paint, CMD, Task Manager, etc.). DO NOT use to answer questions.
@@ -153,13 +200,58 @@ Guidelines:
 - Always call the corresponding tool ONLY when an actual laptop action or setting change is requested.
 - If the user gives a generic open command like "kuch bhi open karo", "koi bhi app kholo", or "open something", do NOT guess or call open_application with "kuch bhi". Ask them politely which specific application they want to open (e.g., Notepad, Chrome, Calculator, VS Code).
 - CRITICAL TRUTHFULNESS: Check tool results. If a tool returns an error or failure, NEVER claim that the app opened or the action succeeded. Inform the user truthfully that it could not be opened and ask for the correct app name.
-- Strict Website & App Execution: When a user asks to open a website or application (e.g., WhatsApp Web, YouTube, Chrome, Notepad), you must strictly use the designated tool/function call (open_or_search_website or open_application) or output ACTION: OPEN_URL_WHATSAPP to execute the action. Do not generate a conversational success response until you receive confirmation from the system that the tool was executed successfully.
+- Strict Website & App Execution: When a user asks to open a website or application (e.g., WhatsApp Web, YouTube, Chrome, Notepad), you must strictly use the designated tool/function call (open_or_search_website or open_application) to execute the action. Do not generate a conversational success response until you receive confirmation from the system that the tool was executed successfully.
 - Never falsely claim to have opened a website, app, sent a message, or performed a system action. You must trigger the backend command first and base your verbal response only on the actual execution result.
-- If the user requests to open WhatsApp Web, you must trigger the action by calling open_or_search_website(website="whatsapp") or outputting ACTION: OPEN_URL_WHATSAPP, and only say it is done after the system confirms it.
 - Never use bullet points, numbered lists, markdown symbols (asterisks, hashes, backticks), or code snippets in spoken replies. Formulate full, flowing conversational sentences suitable for human speech synthesis.
+
+Human-Like Reasoning & Problem-Solving Protocol (Mandatory):
+1. UNDERSTAND FIRST: Read the request fully. If ambiguous, pick the most reasonable interpretation and execute it directly. Only ask a clarifying question if answering wrong would waste real effort. Never answer a different question than asked.
+2. THINK BEFORE SPEAKING: Break problems down silently: known -> what is asked -> steps -> cleanest answer. Never dump raw chain-of-thought, scratch work, or "let me think..." filler into spoken/chat replies. Deliver the final crisp answer like a sharp human expert who already thought it through.
+3. HONESTY OVER CONFIDENCE-THEATER: If unsure, say so plainly ("Pakka nahi pata, but yeh possibility hai...") instead of guessing. If a fact might have changed or needs current data, use search_web_for_answer. Never fabricate numbers, names, sources, or command outputs.
+4. ANSWER LIKE A SHARP HUMAN, NOT A MANUAL: Simple question -> 1-2 line direct answer. Complex/technical question -> structured but concise explanation. Use analogies/examples when helpful. Skip disclaimers, filler, and corporate hedging ("As an AI...", "It depends...").
+5. CONTEXT & MEMORY AWARENESS: Track earlier turns in the session. Resolve pronouns ("isko", "wahi wala", "usme") using recent context before asking for clarification. Accept corrections naturally without over-apologizing.
+6. DECISION-MAKING UNDER AMBIGUITY: Default to the interpretation that gets the user their actual answer fastest. When genuinely stuck between two valid paths, briefly state the assumption rather than stalling.
+7. EMOTIONAL CALIBRATION: Casual chat -> casual, witty reply. Serious/urgent/technical -> drop the wit, be precise and fast. Never joke or be sarcastic when the user is frustrated, worried, or discussing sensitive topics (health, money, errors).
+8. SELF-CORRECTION: If you realize mid-answer that your first instinct was wrong or incomplete, correct it immediately in the same response.
+
+CRITICAL EXECUTION RULES (MANDATORY):
+1. NEVER describe what a tool does. EXECUTE IT. If the user says "news batao", do NOT say "You can check News24" or "Main search kar sakta hoon". Call the tool immediately and read its output.
+2. SEARCH QUERIES: When the user asks for news, weather, facts, or any real-time information, you MUST call 'search_web_for_answer' with a specific English query. Then READ the returned text and summarize the top 3 results in the user's language.
+3. NO EMPTY CONFIRMATIONS: Never respond with just "Ready hoon" or "Bataiye kya karna hai" when the user has already given a clear command. If the user says "Notepad kholo", open it. Do not ask "Kya main khol doon?"
+4. TOOL OUTPUT HANDLING: After calling a tool, you will receive its output as text. You MUST incorporate that real data into your final spoken reply. Never ignore tool output. Never fabricate data that was not in the tool output.
+5. ERROR RESPONSES: If a tool fails or returns empty results, say exactly what happened in natural Hinglish. Example: "Arre yaar, search result nahi mila, internet check kar lo." Do NOT fall back to generic advice.
+6. RESPONSE FORMAT FOR NEWS/SEARCH:
+   - User asks: "Aaj ki news kya hai?"
+   - You call: search_web_for_answer(query="latest news India today")
+   - You receive: "1. Headline A: description... 2. Headline B: description..."
+   - You speak: "Aaj ki top 3 khabrein: 1. [Real Headline A], 2. [Real Headline B], 3. [Real Headline C]."
+   - NEVER say: "Aap News24 ya Google News par dekh sakte hain."
+7. TONE ADAPTATION:
+   - Casual greeting -> warm, confident, 1 sentence.
+   - Serious/technical/urgent request -> drop the wit, be precise and fast.
+   - Never be sarcastic when the user sounds frustrated or is asking about something sensitive.
+8. SELF-CORRECTION: If you realize mid-answer that your first instinct was wrong or incomplete, correct it immediately in the same response.
 """
 
-# Active session tracker & AFC Tool Call Inspection Counter
+def get_effective_system_instruction(user_text: str = "", session_id: str = "") -> str:
+    """Dynamically injects current date/time and detected device into system instruction."""
+    from datetime import datetime
+    now_str = datetime.now().strftime("%A, %d %B %Y at %I:%M %p")
+    session_device = session_manager.get_user_data(session_id, "device") if session_id else None
+    if session_device:
+        device_type = session_device
+    elif any(x in (user_text or "").lower() for x in ["mobile", "phone", "android", "iphone"]):
+        device_type = "Mobile (Smartphone)"
+    else:
+        device_type = "PC / Laptop"
+
+    res = SYSTEM_INSTRUCTION
+    res = res.replace("{{current_datetime}}", now_str).replace("{current_datetime}", now_str)
+    res = res.replace("{{user_device}}", device_type).replace("{user_device}", device_type)
+    return res
+
+# Active session tracker & AFC Tool Call Inspection Counter (ContextVar for async/concurrency isolation)
+_active_session_id_var: ContextVar[str] = ContextVar("active_session_id", default="default")
 _active_session_id = "default"
 _TOOL_CALL_COUNTS: Dict[str, Dict[str, int]] = {}
 _TOOL_CALL_LOCK = threading.Lock()
@@ -168,18 +260,28 @@ _TOOL_CALL_LOCK = threading.Lock()
 _EXECUTED_ACTIONS: Dict[str, set] = {}
 _EXECUTED_ACTIONS_LOCK = threading.Lock()
 
+def get_active_session() -> str:
+    """Returns the active session ID for the current context/task."""
+    try:
+        return _active_session_id_var.get()
+    except LookupError:
+        return _active_session_id
+
 def set_active_session(session_id: str):
+    """Sets the active session ID for the current context/task."""
     global _active_session_id
     _active_session_id = session_id
+    _active_session_id_var.set(session_id)
 
 def _log_tool_invocation(tool_name: str, args: Dict[str, Any]) -> int:
     """Logs tool call with session-specific counter for Gemini AFC invocation inspection."""
+    active_id = get_active_session()
     with _TOOL_CALL_LOCK:
-        sess_counts = _TOOL_CALL_COUNTS.setdefault(_active_session_id, {})
+        sess_counts = _TOOL_CALL_COUNTS.setdefault(active_id, {})
         current_count = sess_counts.get(tool_name, 0) + 1
         sess_counts[tool_name] = current_count
-    logger.info(f"[Gemini AFC Tool Call] Tool: '{tool_name}' | Count: {current_count} in session '{_active_session_id}' | Args: {args}")
-    print(f"[Gemini AFC Tool Call] Tool: '{tool_name}' (call #{current_count} for session '{_active_session_id}') args={args}")
+    logger.info(f"[Gemini AFC Tool Call] Tool: '{tool_name}' | Count: {current_count} in session '{active_id}' | Args: {args}")
+    print(f"[Gemini AFC Tool Call] Tool: '{tool_name}' (call #{current_count} for session '{active_id}') args={args}")
     return current_count
 
 def get_session_tool_call_count(session_id: str, tool_name: Optional[str] = None) -> int:
@@ -232,10 +334,11 @@ def dispatch_action_safe(tool_name: str, params: Optional[Dict[str, Any]] = None
     # Normalize parameters: prune empty strings and None so {"website": "youtube", "search_query": ""}
     # matches {"website": "youtube"} exactly during per-turn deduplication
     p = {k: v for k, v in (params or {}).items() if v not in (None, "")}
+    active_id = get_active_session()
     # Tool call deduplication: ensure exact function + argument pair runs at most once per turn
-    if check_and_record_executed_action(_active_session_id, tool_name, p):
+    if check_and_record_executed_action(active_id, tool_name, p):
         logger.warning(
-            f"[Tool Call Deduplication] Suppressed duplicate action: '{tool_name}' with params {p} in session '{_active_session_id}'"
+            f"[Tool Call Deduplication] Suppressed duplicate action: '{tool_name}' with params {p} in session '{active_id}'"
         )
         return {
             "success": True,
@@ -245,9 +348,20 @@ def dispatch_action_safe(tool_name: str, params: Optional[Dict[str, Any]] = None
             "message": f"Action '{tool_name}' already executed in this turn."
         }
 
+    if tool_name == "send_whatsapp_message" and "is_mobile" not in p:
+        ctx_mobile = session_manager.get_user_data(active_id, "is_mobile")
+        if ctx_mobile is not None:
+            p["is_mobile"] = bool(ctx_mobile)
+        else:
+            device_ctx = (session_manager.get_user_data(active_id, "device") or "").lower()
+            if "mobile" in device_ctx or "smartphone" in device_ctx:
+                p["is_mobile"] = True
+
     try:
         res = dispatch_pc_tool_sync(tool_name, p)
-        if not res.get("offline"):
+        if res.get("success"):
+            return res
+        if not res.get("offline") and not res.get("timeout"):
             return res
     except Exception:
         pass
@@ -255,7 +369,11 @@ def dispatch_action_safe(tool_name: str, params: Optional[Dict[str, Any]] = None
     func = getattr(actions, tool_name, None)
     if func:
         try:
-            return func(**p)
+            import inspect
+            sig = inspect.signature(func)
+            has_var_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values())
+            call_params = p if has_var_kwargs else {k: v for k, v in p.items() if k in sig.parameters}
+            return func(**call_params)
         except Exception as e:
             logger.error(f"Local direct execution error for '{tool_name}': {e}")
             return {"success": False, "status": "error", "message": str(e)}
@@ -272,7 +390,7 @@ def open_application(app_name: str) -> str:
     """Open a Windows desktop application (e.g., Notepad, VS Code, Calculator, Paint, CMD). DO NOT use this tool to answer questions or search for information."""
     _log_tool_invocation("open_application", {"app_name": app_name})
     clean = app_name.strip().lower()
-    session_manager.record_last_action(_active_session_id, clean)
+    session_manager.record_last_action(get_active_session(), clean)
     if "whatsapp" in clean or clean in actions.COMMON_SITES:
         target_site = "whatsapp" if "whatsapp" in clean else clean
         res = dispatch_action_safe("open_website", {"website": target_site})
@@ -326,17 +444,49 @@ def open_or_search_website(website: str, search_query: str = "") -> str:
         return f"Failed to open '{clean_site}': {res.get('message', 'Website error.')}"
     return res.get("message", f"Opened {website}")
 
-def send_whatsapp_message(contact_name: str = "", message: str = "", phone: str = "") -> str:
-    """Send a WhatsApp message to a contact name via UI automation or to a phone number."""
-    _log_tool_invocation("send_whatsapp_message", {"contact_name": contact_name, "message": message, "phone": phone})
-    clean_contact = contact_name.strip()
+def send_whatsapp_message(
+    phone_number: str = "",
+    message: str = "",
+    is_mobile: bool = False,
+    contact_name: str = "",
+    phone: str = "",
+    **kwargs
+) -> str:
+    """Send a WhatsApp message to a phone number or contact name (platform-aware for mobile and desktop)."""
+    clean_target = (phone_number or phone or contact_name or "").strip()
     clean_msg = message.strip()
-    if clean_contact:
-        res = dispatch_action_safe("send_whatsapp_message", {"contact_name": clean_contact, "message": clean_msg, "phone": phone})
+
+    # If is_mobile is False, resolve platform from session context if available
+    effective_is_mobile = is_mobile
+    if not effective_is_mobile:
+        active_id = get_active_session()
+        ctx_mobile = session_manager.get_user_data(active_id, "is_mobile")
+        if ctx_mobile:
+            effective_is_mobile = True
+        else:
+            device_ctx = (session_manager.get_user_data(active_id, "device") or "").lower()
+            if "mobile" in device_ctx or "smartphone" in device_ctx:
+                effective_is_mobile = True
+
+    _log_tool_invocation("send_whatsapp_message", {
+        "phone_number": clean_target,
+        "message": clean_msg,
+        "is_mobile": effective_is_mobile
+    })
+    if clean_target:
+        if clean_target.lower() in CONJUNCTIONS or clean_target.lower() in NON_CONTACT_WORDS:
+            return f"Failed to send WhatsApp message: '{clean_target}' is a conjunction or invalid contact name."
+        res = dispatch_action_safe("send_whatsapp_message", {
+            "phone_number": clean_target,
+            "message": clean_msg,
+            "is_mobile": effective_is_mobile,
+            "contact_name": clean_target,
+            "phone": clean_target
+        })
         if not res.get("success"):
-            return f"Failed to send WhatsApp message to '{clean_contact}': {res.get('message', 'Error')}"
-        return res.get("message", f"WhatsApp message to '{clean_contact}' processed.")
-    res = actions.send_whatsapp(phone, clean_msg)
+            return f"Failed to send WhatsApp message to '{clean_target}': {res.get('message', 'Error')}"
+        return res.get("message", f"WhatsApp message to '{clean_target}' processed.")
+    res = actions.send_whatsapp_message(phone_number="", message=clean_msg, is_mobile=effective_is_mobile)
     return res.get("message", "WhatsApp Web opened with prefilled message")
 
 def play_spotify_music(query: str = "") -> str:
@@ -467,7 +617,7 @@ TOOLS_LIST = [
     get_time_and_date,
     analyze_clipboard,
     open_or_search_website,
-    # send_whatsapp_message handled strictly via structured JSON parser to prevent double-execution
+    send_whatsapp_message,
     play_youtube_video,
     play_spotify_music,
     start_dev_environment,
@@ -512,6 +662,53 @@ TOOL_MAP = {
     "search_instagram_user": search_instagram_user,
     "search_web_for_answer": search_web_for_answer
 }
+
+
+def execute_live_tool_call(tool_name: str, args: Optional[Dict[str, Any]] = None, session_id: str = "default") -> Dict[str, Any]:
+    """
+    Executes a function call requested by the Gemini Live API session.
+    Routes through TOOL_MAP / dispatch_action_safe while logging and tracking counts.
+    """
+    set_active_session(session_id)
+    clean_name = tool_name.strip() if tool_name else ""
+    clean_args = dict(args) if args else {}
+
+    if clean_name == "send_whatsapp_message" and "is_mobile" not in clean_args:
+        ctx_mobile = session_manager.get_user_data(session_id, "is_mobile")
+        if ctx_mobile is not None:
+            clean_args["is_mobile"] = bool(ctx_mobile)
+        else:
+            device_ctx = (session_manager.get_user_data(session_id, "device") or "").lower()
+            if "mobile" in device_ctx or "smartphone" in device_ctx:
+                clean_args["is_mobile"] = True
+
+    logger.info(f"[Gemini Live Tool Call] Executing '{clean_name}' with args {clean_args} in session '{session_id}'")
+
+    func = TOOL_MAP.get(clean_name)
+    if func:
+        try:
+            raw_res = func(**clean_args)
+            if isinstance(raw_res, dict):
+                return raw_res
+            return {
+                "success": True,
+                "status": "executed",
+                "tool": clean_name,
+                "action": clean_name,
+                "message": str(raw_res)
+            }
+        except Exception as e:
+            logger.error(f"[Gemini Live Tool Call] Error executing '{clean_name}': {e}")
+            return {"success": False, "status": "error", "tool": clean_name, "error": str(e)}
+
+    # Fallback to dispatch_action_safe for dynamic/MCP tools
+    try:
+        res = dispatch_action_safe(clean_name, clean_args)
+        return res
+    except Exception as e:
+        logger.error(f"[Gemini Live Tool Call] Fallback dispatch error for '{clean_name}': {e}")
+        return {"success": False, "status": "error", "tool": clean_name, "error": str(e)}
+
 
 # OpenAI/OpenRouter Compatible Tools Schema
 OPENROUTER_TOOLS = [
@@ -750,22 +947,36 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
     Intelligent rule-based intent parser supporting conversational chit-chat,
     contextual follow-ups, and all 12 automation tools when Gemini API is unavailable.
     """
-    text = user_text.lower().strip()
+    if not user_text or not isinstance(user_text, str) or not user_text.strip():
+        return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+
+    user_text_norm = transliterate_indic_command(user_text)
+    text = user_text_norm.lower().strip()
 
     # Multi-Turn WhatsApp Memory: User previously gave contact name, now providing message content
     pending_whatsapp = session_manager.get_pending_whatsapp(session_id)
-    if pending_whatsapp:
+    if pending_whatsapp and (pending_whatsapp.lower() in CONJUNCTIONS or pending_whatsapp.lower() in NON_CONTACT_WORDS):
         session_manager.clear_pending_whatsapp(session_id)
-        if not any(k in text for k in ["cancel", "mat bhejo", "stop", "rehne do", "chodo", "no"]):
+        pending_whatsapp = None
+
+    if pending_whatsapp:
+        if any(k in text for k in ["cancel", "mat bhejo", "stop", "rehne do", "chodo", "no"]):
+            session_manager.clear_pending_whatsapp(session_id)
+            return {
+                "reply": f"WhatsApp message to '{pending_whatsapp}' cancel kar diya gaya hai.",
+                "action": {"status": "cancelled", "contact_name": pending_whatsapp}
+            }
+
+        routed_check = CommandRouter.route_command(user_text)
+        if routed_check.get("intent") in ["whatsapp_message", "whatsapp_clarification_needed", "get_whatsapp_unread", "open_whatsapp", "open_settings"]:
+            session_manager.clear_pending_whatsapp(session_id)
+            pending_whatsapp = None
+        else:
+            session_manager.clear_pending_whatsapp(session_id)
             res = actions.send_whatsapp_message(contact_name=pending_whatsapp, message=user_text)
             return {
                 "reply": f"WhatsApp par '{pending_whatsapp}' ko message bhej diya gaya hai: '{user_text}'.",
                 "action": res
-            }
-        else:
-            return {
-                "reply": f"WhatsApp message to '{pending_whatsapp}' cancel kar diya gaya hai.",
-                "action": {"status": "cancelled", "contact_name": pending_whatsapp}
             }
 
     # Multi-Turn Instagram Memory: User previously gave recipient username, now providing message content
@@ -960,7 +1171,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             return {"reply": f"{last_act.capitalize()} band kar diya hai.", "action": res}
 
     # 5. Time / Date
-    if re.search(r'\b(time|samay|baje|date|tareekh|din|aaj)\b', text):
+    if re.search(r'\b(time|samay|baje|date|tareekh|din|aaj)\b', text) and not any(k in text for k in ["search", "dhoondo", "release date", "expiry", "birth"]):
         res = actions.get_time_and_date()
         return {"reply": res["message"], "action": res}
 
@@ -1118,7 +1329,10 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
 
     # 13. Google Search
     if "google" in text:
-        query = text.replace("google", "").replace("search", "").replace("karo", "").replace("pe", "").replace("par", "").strip()
+        query = text
+        for w in ["google", "search", "dhoondo", "find", "kholo", "open", "chalao", "start", "launch", "karo", "do", "pe", "par", "me", "mein", "please"]:
+            query = re.sub(rf'\b{w}\b', '', query, flags=re.IGNORECASE).strip()
+        query = re.sub(r'\s+', ' ', query).strip()
         if executor_bridge.is_connected():
             res = dispatch_pc_tool_sync("open_website", {"website": "google", "search_query": query})
         else:
@@ -1308,142 +1522,70 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                 "action": {"status": "clarification_needed", "contact_name": missing_user.capitalize(), "platform": "instagram"}
             }
 
-    # 14. WhatsApp (Open Web, Unread messages, automated UI messaging, or web pre-fill)
-    is_opening_whatsapp = (
-        "whatsapp" in text
-        and any(kw in text for kw in ["open", "kholo", "chalao", "start", "launch", "web"])
-        and not any(kw in text for kw in ["send", "bhej", "bhejo", "bolo", "say", "saying", "that", "msg", "message", "chat", "reply", "jawab"])
-    )
-    if is_opening_whatsapp:
+    # 14. Priority 1 & 2: WhatsApp (Terminal Route) & Windows Settings
+    routed = CommandRouter.route_command(user_text)
+
+    if routed.get("intent") == "get_whatsapp_unread":
+        res = actions.get_whatsapp_unread(max_chats=5)
+        return {"reply": res.get("message", "WhatsApp unread checked."), "action": res}
+
+    elif routed.get("intent") == "open_whatsapp":
         if executor_bridge.is_connected():
             res = dispatch_pc_tool_sync("open_website", {"website": "whatsapp"})
         else:
             res = actions.open_website("whatsapp")
         return {"reply": "WhatsApp Web open kar diya hai!", "action": res}
 
-    is_messaging = (
-        not has_insta_kw
-        and (
-            any(k in text for k in ["unread message", "kiska message", "send message", "send a message", "send msg", "send chat", "chat with", "reply to"])
-            or re.search(r'\b(?:send\s+(?:a\s+)?(?:message|msg|chat)|reply|chat|text|message)\s+(?:to\s+)?[a-zA-Z0-9_]+', text, re.IGNORECASE)
-            or re.search(r'\b[a-zA-Z0-9_]+\s+ko\s+.*\b(?:bhejo|send\s*karo|bolo|jawab|reply)\b', text, re.IGNORECASE)
-            or ("whatsapp" in text and any(k in text for k in ["send", "bhej", "bhejo", "bolo", "unread", "message", "msg", "chat", "reply", "jawab"]))
-        )
-    )
-    if is_messaging:
-        if not is_opening_whatsapp:
-            # 14b. Read Unread Messages (check first before contact extraction)
-            if any(k in text for k in ["unread", "kiska", "check", "dekho", "aaya", "padho", "read", "naye"]) and any(k in text for k in ["message", "messages", "whatsapp", "chat"]):
-                res = actions.get_whatsapp_unread(max_chats=5)
-                return {"reply": res.get("message", "WhatsApp unread checked."), "action": res}
+    elif routed.get("intent") == "whatsapp_message":
+        target_contact = routed.get("contact")
+        msg_content = routed.get("message")
+        if "reply" in text or "jawab" in text:
+            res = actions.send_whatsapp_reply(chat_name=target_contact, message=msg_content)
+        else:
+            if executor_bridge.is_connected():
+                res = dispatch_pc_tool_sync("send_whatsapp_message", {"contact_name": target_contact, "message": msg_content})
+            else:
+                res = actions.send_whatsapp_message(contact_name=target_contact, message=msg_content)
+        if not res.get("success"):
+            err_msg = res.get("message") or res.get("error") or "Message deliver nahi ho saka."
+            return {"reply": f"Kshama karein, WhatsApp par '{target_contact}' ko message nahi bheja ja saka: {err_msg}", "action": res}
+        elif res.get("status") == "opened_whatsapp_web":
+            return {"reply": res.get("message", f"WhatsApp Web open kar diya hai. Kripya '{target_contact}' ki chat me message bhejein."), "action": res}
+        return {"reply": f"WhatsApp par '{target_contact}' ko message bhej diya gaya hai: '{msg_content}'", "action": res}
 
+    elif routed.get("intent") == "whatsapp_clarification_needed":
+        target_contact = routed.get("contact")
+        session_manager.record_pending_whatsapp(session_id, target_contact)
+        return {
+            "reply": f"What message would you like to send to {target_contact}?",
+            "action": {"status": "clarification_needed", "contact_name": target_contact}
+        }
 
-            # 14a. Extract Contact Name & Message Content
-            non_contacts = {
-                "a", "the", "to", "someone", "unread", "chat", "message", "msg",
-                "par", "pe", "ko", "me", "hi", "ki", "ke", "open", "web", "kholo",
-                "karo", "chalao", "start", "launch", "send", "bolo", "reply", "say", "saying"
+    elif routed.get("intent") == "whatsapp_contact_clarification_needed":
+        return {
+            "reply": "Who would you like to message on WhatsApp?",
+            "action": {"status": "clarification_needed", "platform": "whatsapp"}
+        }
+
+    elif routed.get("intent") == "open_settings":
+        target = routed.get("setting_target", "settings")
+        session_manager.record_last_action(session_id, target)
+        if executor_bridge.is_connected():
+            res = dispatch_pc_tool_sync("open_app", {"app_name": target})
+        else:
+            res = actions.open_app(target)
+        if res.get("offline"):
+            return {
+                "reply": f"Kshama karein, laptop executor offline hai: '{target.capitalize()}' open nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                "action": res
             }
-            action_fillers = {"bhejo", "karo", "do", "karna hai", "send karo", "please", "par message", "message", "msg", "say", "saying", ""}
+        elif res.get("timeout"):
+            return {
+                "reply": f"Kshama karein, laptop executor timed out: '{target.capitalize()}' open nahi ho saka.",
+                "action": res
+            }
+        return {"reply": f"{target.capitalize()} open kar diya hai.", "action": res}
 
-            target_contact = ""
-            msg_content = ""
-
-            # English structured pattern (with saying/say/that/colon/etc.)
-            m_en1 = re.search(
-                r'(?:send\s+(?:a\s+)?(?:message|msg|chat)|reply|chat|message|msg|text|whatsapp)\s+(?:to\s+)?([a-zA-Z0-9_]+)(?:\s+(?:on\s+whatsapp|via\s+whatsapp))?\s*(?:saying|say|with\s+message|that|ki|ke|\:)\s*[:\s]+(.*)',
-                text, re.IGNORECASE
-            )
-            if m_en1:
-                cand_c = m_en1.group(1).strip()
-                if cand_c.lower() not in non_contacts:
-                    target_contact = cand_c
-                    msg_content = m_en1.group(2).strip()
-
-            # Direct English pattern ("send chat shivam hello", "chat shivam hello", "text shivam hello")
-            if not target_contact:
-                m_en2 = re.search(
-                    r'(?:send\s+(?:a\s+)?(?:chat|message|msg)|chat|text)\s+(?:to\s+)?([a-zA-Z0-9_]+)\s+(?:say\s+|saying\s+)?(.*)',
-                    text, re.IGNORECASE
-                )
-                if m_en2:
-                    cand_c = m_en2.group(1).strip()
-                    if cand_c.lower() not in non_contacts:
-                        target_contact = cand_c
-                        msg_content = m_en2.group(2).strip()
-
-            # Hindi pattern with "ko" and explicit saying/ki/ke/colon
-            if not target_contact:
-                m_hi1 = re.search(
-                    r'([a-zA-Z0-9_]+)\s+ko\s+(?:whatsapp\s*(?:par|pe)?\s*)?(?:message|msg|jawab|reply|bolo|chat)?\s*(?:do|karo|bhejo|send\s*karo)?\s*(?:ki|ke|saying|\:)\s*[:\s]+(.*)',
-                    text, re.IGNORECASE
-                )
-                if m_hi1:
-                    cand_c = m_hi1.group(1).replace("whatsapp", "").strip()
-                    if cand_c.lower() not in non_contacts:
-                        target_contact = cand_c
-                        msg_content = m_hi1.group(2).strip()
-
-            # Direct Hindi pattern ("kasyap ko hi bhejo", "whatsapp me kasyap ko hi send karo")
-            if not target_contact:
-                m_direct = re.search(
-                    r'(?:whatsapp\s*(?:me|par|pe)?\s*)?([a-zA-Z0-9_]+)\s+ko\s+(?:whatsapp\s*(?:par|me|pe)?\s*)?(?:message|msg|jawab|reply|bolo)?\s*(?:ki|ke|saying|\:)?\s*([a-zA-Z0-9_\s]+?)\s*(?:bhejo|send\s*karo|bhej\s*do|send\s*kar\s*do|karo|bolo|likho)\b',
-                    text, re.IGNORECASE
-                )
-                if m_direct:
-                    cand_name = m_direct.group(1).replace("whatsapp", "").strip()
-                    cand_msg = m_direct.group(2).strip()
-                    cand_msg = re.sub(r'\b(message|msg|whatsapp|par|pe)\b', '', cand_msg, flags=re.IGNORECASE).strip() or cand_msg
-                    if cand_msg.lower() not in action_fillers and cand_name.lower() not in non_contacts:
-                        target_contact = cand_name
-                        msg_content = cand_msg
-
-            if msg_content.lower() in action_fillers:
-                msg_content = ""
-
-            if target_contact and msg_content:
-                if "reply" in text or "jawab" in text:
-                    res = actions.send_whatsapp_reply(chat_name=target_contact, message=msg_content)
-                else:
-                    if executor_bridge.is_connected():
-                        res = dispatch_pc_tool_sync("send_whatsapp_message", {"contact_name": target_contact, "message": msg_content})
-                    else:
-                        res = actions.send_whatsapp_message(contact_name=target_contact, message=msg_content)
-                if not res.get("success"):
-                    err_msg = res.get("message") or res.get("error") or "Message deliver nahi ho saka."
-                    return {"reply": f"Kshama karein, WhatsApp par '{target_contact}' ko message nahi bheja ja saka: {err_msg}", "action": res}
-                elif res.get("status") == "opened_whatsapp_web":
-                    return {"reply": res.get("message", f"WhatsApp Web open kar diya hai. Kripya '{target_contact}' ki chat me message bhejein."), "action": res}
-                return {"reply": f"WhatsApp par '{target_contact}' ko message bhej diya gaya hai: '{msg_content}'", "action": res}
-
-            # 14c. Missing Info Rule: Contact Name given but NO message content
-            m_missing_en = re.search(r'(?:send\s+(?:a\s+)?(?:message|msg|chat)|reply|chat|message|msg|text|whatsapp)\s+(?:to\s+)?([a-zA-Z0-9_]+)', text, re.IGNORECASE)
-            m_missing_hi = re.search(r'([a-zA-Z0-9_]+)\s+ko\s+(?:whatsapp\s*(?:par|pe)?\s*)?(?:message|msg|jawab|reply|chat)?', text, re.IGNORECASE)
-
-            missing_contact = ""
-            if " ko " in f" {text.lower()} " and m_missing_hi and m_missing_hi.group(1).lower() not in non_contacts:
-                missing_contact = m_missing_hi.group(1).strip()
-            elif m_missing_en and m_missing_en.group(1).lower() not in non_contacts:
-                missing_contact = m_missing_en.group(1).strip()
-            elif m_missing_hi and m_missing_hi.group(1).lower() not in non_contacts:
-                missing_contact = m_missing_hi.group(1).strip()
-
-            if missing_contact:
-                for filler in ["please", "zara", "jaldi", "yaar", "bhai", "karo", "bhejo"]:
-                    missing_contact = re.sub(rf'\b{filler}\b', '', missing_contact, flags=re.IGNORECASE).strip()
-
-            if missing_contact and missing_contact.lower() not in non_contacts:
-                session_manager.record_pending_whatsapp(session_id, missing_contact.capitalize())
-                return {
-                    "reply": f"What message would you like to send to {missing_contact.capitalize()}?",
-                    "action": {"status": "clarification_needed", "contact_name": missing_contact.capitalize()}
-                }
-
-            # 14d. General WhatsApp Web pre-fill
-            msg_match = re.search(r'(?:message|msg|likho|bhejo)\s+(.*)', text, re.IGNORECASE)
-            msg = msg_match.group(1) if msg_match else ""
-            res = actions.send_whatsapp(message=msg)
-            return {"reply": "WhatsApp Web open kar diya hai. Message pre-filled hai.", "action": res}
 
     # 15. Open Apps / Websites
     open_keywords = ["open", "kholo", "start", "chalao", "launch"]
@@ -1521,6 +1663,15 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                 return {"reply": f"{app_target.capitalize()} band kar diya hai.", "action": res}
 
     # 17. Real-Time Web Search & Q&A
+    if routed.get("intent") == "web_search":
+        q_srch = routed.get("query", "").strip()
+        if q_srch:
+            res = actions.search_web_for_answer(q_srch)
+            if res.get("success"):
+                summary_text = res.get("results", "")
+                return {"reply": f"Web search results:\n{summary_text[:400]}", "action": res}
+            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": res}
+
     m_search = re.search(
         r'^(?:search\s+(?:the\s+)?web\s+(?:for\s+)?|web\s+search\s+(?:for\s+)?|search\s+online\s+(?:for\s+)?|search\s+internet\s+(?:for\s+)?|internet\s+pe\s+search\s+karo\s+|web\s+pe\s+search\s+karo\s+)(.*)',
         text,
@@ -1546,6 +1697,8 @@ def fallback_intent_parser(user_text: str, session_id: str = "default") -> Dict[
     Offline/Fallback Rule-Based Natural Language Processor with Session Memory.
     Guaranteed to catch unexpected exceptions and return a safe generic response.
     """
+    if not user_text or not isinstance(user_text, str) or not user_text.strip():
+        return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
     try:
         return _parse_fallback_intent(user_text, session_id=session_id)
     except Exception as e:
@@ -1579,15 +1732,104 @@ def _get_openrouter_client(api_key: str):
     return _persistent_openrouter_client
 
 
-async def _process_via_openrouter(user_text: str, session_id: str, openrouter_key: str, model_name: str) -> Dict[str, Any]:
+_openrouter_circuit_broken_until: float = 0.0
+_openrouter_cooldown_reason: str = ""
+
+def is_openrouter_available() -> bool:
+    """Checks if OpenRouter is configured and not currently rate-limited by circuit breaker."""
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not key or key == "your_openrouter_api_key_here":
+        return False
+    if time.time() < _openrouter_circuit_broken_until:
+        return False
+    return True
+
+def trip_openrouter_circuit_breaker(error_msg: str, duration: float = 3600.0):
+    """Trips circuit breaker to avoid repeated 429 delays and console spam."""
+    global _openrouter_circuit_broken_until, _openrouter_cooldown_reason
+    _openrouter_circuit_broken_until = time.time() + duration
+    _openrouter_cooldown_reason = error_msg
+    logger.warning(
+        f"[Brain] OpenRouter circuit breaker tripped for {int(duration)}s ({error_msg}). "
+        f"All subsequent queries will route directly to Gemini without delay."
+    )
+
+def reset_openrouter_circuit_breaker():
+    """Resets circuit breaker status."""
+    global _openrouter_circuit_broken_until, _openrouter_cooldown_reason
+    _openrouter_circuit_broken_until = 0.0
+    _openrouter_cooldown_reason = ""
+
+
+_gemini_circuit_broken_until: float = 0.0
+_gemini_cooldown_reason: str = ""
+
+def is_gemini_available() -> bool:
+    """Checks if Gemini is configured and not currently rate-limited by circuit breaker."""
+    env_gemini_key = os.getenv("GEMINI_API_KEY")
+    api_key = env_gemini_key.strip() if env_gemini_key is not None else GEMINI_API_KEY
+    if not api_key or api_key == "your_gemini_api_key_here":
+        return False
+    if time.time() < _gemini_circuit_broken_until:
+        return False
+    return True
+
+def trip_gemini_circuit_breaker(error_msg: str, duration: float = 30.0):
+    """Trips Gemini circuit breaker to avoid repeated 429 quota delays and timeouts."""
+    global _gemini_circuit_broken_until, _gemini_cooldown_reason
+    # Extract retryDelay if provided by Google API, e.g. "'retryDelay': '8s'"
+    delay_match = re.search(r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s?", str(error_msg), re.I)
+    if delay_match:
+        try:
+            parsed_delay = float(delay_match.group(1))
+            duration = max(duration, parsed_delay + 2.0)
+        except Exception:
+            pass
+    _gemini_circuit_broken_until = time.time() + duration
+    _gemini_cooldown_reason = str(error_msg)
+    logger.warning(
+        f"[Brain] Gemini circuit breaker tripped for {int(duration)}s ({str(error_msg)[:120]}). "
+        f"Subsequent queries will route directly to fast fallback/OpenRouter without delay."
+    )
+
+def reset_gemini_circuit_breaker():
+    """Resets Gemini circuit breaker status."""
+    global _gemini_circuit_broken_until, _gemini_cooldown_reason
+    _gemini_circuit_broken_until = 0.0
+    _gemini_cooldown_reason = ""
+
+
+async def _process_via_openrouter(user_text: str, session_id: str, openrouter_key: str, model_name: str, timeout: float = 12.0) -> Dict[str, Any]:
     """
     Executes voice command via OpenRouter with multi-turn tool calling loop.
     Supports compound commands, system diagnostics, web search, and Gojo/Tech Lead persona.
     """
     client = _get_openrouter_client(openrouter_key)
 
+    # --- ASTRA UPGRADE: DYNAMIC MEMORY (MEM0) INJECTION START ---
+    mem_ctx = search_relevant_memories(user_text)
+    effective_system_instruction = get_effective_system_instruction(user_text, session_id=session_id)
+    if mem_ctx:
+        effective_system_instruction = (
+            f"{effective_system_instruction}\n\n"
+            f"[Persistent Long-Term Memory & User Preferences]:\n{mem_ctx}\n"
+            f"(Note: Seamlessly incorporate these remembered facts if relevant to the conversation)."
+        )
+    # --- ASTRA UPGRADE: DYNAMIC MEMORY (MEM0) INJECTION END ---
+
+    # --- ASTRA UPGRADE: DYNAMIC MCP TOOLS DISCOVERY START ---
+    try:
+        _, mcp_map, mcp_schemas = await discover_mcp_tools()
+    except Exception as mcp_err:
+        logger.warning(f"[MCP] Tool discovery failed: {mcp_err}")
+        mcp_map, mcp_schemas = {}, []
+
+    active_tools = OPENROUTER_TOOLS + mcp_schemas if mcp_schemas else OPENROUTER_TOOLS
+    active_tool_map = {**TOOL_MAP, **mcp_map} if mcp_map else TOOL_MAP
+    # --- ASTRA UPGRADE: DYNAMIC MCP TOOLS DISCOVERY END ---
+
     # Initialize messages list with Master System Instruction & multi-turn history
-    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": effective_system_instruction}]
     messages.extend(session_manager.get_messages(session_id))
     messages.append({"role": "user", "content": user_text})
 
@@ -1605,10 +1847,10 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
                 client.chat.completions.create,
                 model=model_name,
                 messages=messages,
-                tools=OPENROUTER_TOOLS,
+                tools=active_tools,
                 temperature=0.7
             ),
-            timeout=35.0
+            timeout=timeout
         )
         choice = response.choices[0]
         assistant_msg = choice.message
@@ -1645,9 +1887,9 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
 
             res_output = ""
             act_res = None
-            if fn_name in TOOL_MAP:
+            if fn_name in active_tool_map:
                 try:
-                    raw_res = TOOL_MAP[fn_name](**args)
+                    raw_res = active_tool_map[fn_name](**args)
                     res_output = str(raw_res)
                     act_res = raw_res if isinstance(raw_res, dict) else {"success": True, "output": str(raw_res)}
                 except Exception as e:
@@ -1728,14 +1970,197 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
 
 
 # =====================================================================
+# Gemini Live API (Bidirectional Streaming Session)
+# =====================================================================
+
+async def _invoke_live_callback(cb, *args):
+    """Safely executes sync or async callback for Gemini Live streaming."""
+    if not cb:
+        return
+    try:
+        res = cb(*args)
+        if asyncio.iscoroutine(res):
+            await res
+    except Exception as e:
+        logger.debug(f"[Gemini Live] Callback execution notice: {e}")
+
+
+async def run_live_session(
+    user_text: str,
+    session_id: str = "default",
+    on_text_chunk: Optional[Callable[[str], Any]] = None,
+    on_audio_chunk: Optional[Callable[[bytes], Any]] = None,
+    on_tool_call: Optional[Callable[[str, Dict[str, Any], Any], Any]] = None,
+    is_mobile: Optional[bool] = None
+) -> Dict[str, Any]:
+    """
+    Opens a Gemini Live bidirectional streaming connection (client.aio.live.connect).
+    Registers the exact same function-calling tools schema (TOOLS_LIST) with the Live session,
+    streams response chunks as they arrive, and dispatches tool calls in real time.
+    Falls back gracefully to the standard offline / Gemini engine if Live fails to connect.
+    """
+    if not user_text or not isinstance(user_text, str) or not user_text.strip():
+        return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+
+    clean_text = user_text.strip()
+    t0 = time.perf_counter()
+    set_active_session(session_id)
+    if is_mobile is not None:
+        session_manager.set_user_data(session_id, "is_mobile", is_mobile)
+        session_manager.set_user_data(session_id, "device", "Mobile (Smartphone)" if is_mobile else "PC / Laptop")
+    reset_session_tool_counts(session_id)
+    reset_executed_actions(session_id)
+
+    # 1. Fast deterministic check: instant execution for deterministic app / media / website intents
+    fallback_res = fallback_intent_parser(clean_text, session_id=session_id)
+    if fallback_res and fallback_res.get("action") is not None:
+        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+        logger.info(
+            "[Gemini Live] Executed via fast deterministic intent check",
+            extra={"session_id": session_id, "latency_ms": latency_ms, "mode": "fast_fallback_action", "success": True}
+        )
+        reply = fallback_res.get("reply", "")
+        if on_text_chunk and reply:
+            await _invoke_live_callback(on_text_chunk, reply)
+        return fallback_res
+
+    # 2. Check API key and circuit breaker
+    if not is_gemini_available():
+        logger.info("[Gemini Live] Gemini API unavailable or circuit broken. Using standard fallback.")
+        return await _process_voice_command_core(clean_text, session_id=session_id)
+    env_gemini_key = os.getenv("GEMINI_API_KEY")
+    api_key = env_gemini_key.strip() if env_gemini_key is not None else GEMINI_API_KEY
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+
+        mem_ctx = search_relevant_memories(clean_text)
+        effective_gemini_instruction = get_effective_system_instruction(clean_text, session_id=session_id)
+        if mem_ctx:
+            effective_gemini_instruction = (
+                f"{effective_gemini_instruction}\n\n"
+                f"[Persistent Long-Term Memory & User Preferences]:\n{mem_ctx}\n"
+            )
+
+        mcp_tools, _, _ = get_dynamic_mcp_tools_sync()
+        effective_gemini_tools = TOOLS_LIST + mcp_tools if mcp_tools else TOOLS_LIST
+
+        live_config = types.LiveConnectConfig(
+            response_modalities=["TEXT"],
+            system_instruction=effective_gemini_instruction,
+            tools=effective_gemini_tools,
+            temperature=0.7
+        )
+
+        primary_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview").strip() or "gemini-3.1-flash-live-preview"
+        candidate_models = [primary_model]
+        for alt in ["gemini-3.1-flash-live-preview", "gemini-live-2.5-flash-preview", "gemini-2.0-flash-exp"]:
+            if alt not in candidate_models:
+                candidate_models.append(alt)
+
+        last_live_exc = None
+        for cand_model in candidate_models:
+            try:
+                full_text_chunks: List[str] = []
+                last_action_payload: Optional[Dict[str, Any]] = None
+
+                logger.info(f"[Gemini Live] Connecting live session with model: '{cand_model}'")
+                async with client.aio.live.connect(model=cand_model, config=live_config) as session:
+                    await session.send_client_content(
+                        turns=types.Content(
+                            role="user",
+                            parts=[types.Part(text=clean_text)]
+                        ),
+                        turn_complete=True
+                    )
+
+                    async for message in session.receive():
+                        # A. Tool Call Handling
+                        if getattr(message, "tool_call", None):
+                            for fc in getattr(message.tool_call, "function_calls", []):
+                                t_name = getattr(fc, "name", "")
+                                t_args = dict(getattr(fc, "args", {}))
+                                t_id = getattr(fc, "id", None)
+
+                                act_res = execute_live_tool_call(t_name, t_args, session_id=session_id)
+                                last_action_payload = act_res
+
+                                if on_tool_call:
+                                    await _invoke_live_callback(on_tool_call, t_name, t_args, act_res)
+
+                                fn_resp = types.FunctionResponse(
+                                    name=t_name,
+                                    response={"result": act_res},
+                                    id=t_id
+                                )
+                                await session.send_tool_response(function_responses=fn_resp)
+
+                        # B. Server Content (Text / Audio Streaming)
+                        if getattr(message, "server_content", None):
+                            m_turn = getattr(message.server_content, "model_turn", None)
+                            if m_turn:
+                                for part in getattr(m_turn, "parts", []):
+                                    txt = getattr(part, "text", "")
+                                    if txt:
+                                        full_text_chunks.append(txt)
+                                        if on_text_chunk:
+                                            await _invoke_live_callback(on_text_chunk, txt)
+                                    inline_data = getattr(part, "inline_data", None)
+                                    if inline_data and getattr(inline_data, "data", None):
+                                        if on_audio_chunk:
+                                            await _invoke_live_callback(on_audio_chunk, inline_data.data)
+
+                    reply_text = "".join(full_text_chunks).strip()
+                    if not reply_text:
+                        if last_action_payload and last_action_payload.get("message"):
+                            reply_text = last_action_payload["message"]
+                        else:
+                            reply_text = "Kaam kar diya gaya hai."
+
+                    latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+                    logger.info(
+                        "[Gemini Live] Completed live streaming session",
+                        extra={"session_id": session_id, "latency_ms": latency_ms, "model": cand_model, "success": True}
+                    )
+                    return {
+                        "reply": reply_text,
+                        "action": last_action_payload or {"status": "executed", "mode": "gemini_live"}
+                    }
+
+            except Exception as live_err:
+                last_live_exc = live_err
+                err_str = str(live_err)
+                logger.warning(f"[Gemini Live] Session error on '{cand_model}': {err_str}")
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    trip_gemini_circuit_breaker(err_str)
+                    break
+                continue
+
+        if last_live_exc:
+            raise last_live_exc
+
+    except Exception as exc:
+        logger.warning(f"[Gemini Live] Session connection failed ({exc}). Gracefully falling back to standard engine.")
+        return await _process_voice_command_core(clean_text, session_id=session_id)
+
+    return await _process_voice_command_core(clean_text, session_id=session_id)
+
+
+# =====================================================================
 # Main Process Voice Command Entry Point
 # =====================================================================
 
-async def process_voice_command(user_text: str, session_id: str = "default") -> Dict[str, Any]:
+async def _process_voice_command_core(user_text: str, session_id: str = "default", is_mobile: Optional[bool] = None) -> Dict[str, Any]:
     """
     Core brain connecting Voice Input -> Multi-Turn Session Memory -> OpenRouter / Gemini Tool Calling.
     """
     set_active_session(session_id)
+    if is_mobile is not None:
+        session_manager.set_user_data(session_id, "is_mobile", is_mobile)
+        session_manager.set_user_data(session_id, "device", "Mobile (Smartphone)" if is_mobile else "PC / Laptop")
     reset_session_tool_counts(session_id)
     reset_executed_actions(session_id)
     if not user_text or not user_text.strip():
@@ -1757,12 +2182,28 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
 
     t0 = time.perf_counter()
 
-    # Priority 1: OpenRouter (NVIDIA / Llama / Claude models via OpenRouter API)
-    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if openrouter_key and openrouter_key != "your_openrouter_api_key_here":
+    primary_provider = os.getenv("PRIMARY_PROVIDER", os.getenv("AI_PROVIDER", "auto")).strip().lower()
+    env_gemini_key = os.getenv("GEMINI_API_KEY")
+    api_key = env_gemini_key.strip() if env_gemini_key is not None else GEMINI_API_KEY
+    has_gemini = is_gemini_available()
+    openrouter_ready = is_openrouter_available()
+
+    # Determine whether OpenRouter should be attempted first
+    # - If primary_provider == "gemini": bypass OpenRouter, call Gemini directly for fastest response & native AFC
+    # - If primary_provider == "openrouter": attempt OpenRouter first
+    # - If primary_provider == "auto": attempt OpenRouter if available and configured, else Gemini
+    should_try_openrouter_first = False
+    if openrouter_ready:
+        if primary_provider == "openrouter":
+            should_try_openrouter_first = True
+        elif primary_provider == "auto":
+            should_try_openrouter_first = True
+
+    if should_try_openrouter_first:
+        openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
         try:
-            res = await _process_via_openrouter(user_text, session_id, openrouter_key, openrouter_model)
+            res = await _process_via_openrouter(user_text, session_id, openrouter_key, openrouter_model, timeout=12.0)
             latency_ms = round((time.perf_counter() - t0) * 1000, 2)
             logger.info(
                 "Processed voice command via OpenRouter",
@@ -1776,14 +2217,54 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
             )
             return res
         except Exception as e:
-            logger.warning(f"OpenRouter call failed ({e}). Falling back to Gemini / local engine...")
+            err_str = str(e)
+            if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+                trip_openrouter_circuit_breaker(f"Rate limit 429: {err_str[:120]}", duration=3600.0)
+            elif isinstance(e, asyncio.TimeoutError):
+                trip_openrouter_circuit_breaker("OpenRouter call timed out", duration=180.0)
+            else:
+                logger.warning(f"OpenRouter call failed ({e}). Falling back to Gemini / local engine...")
 
-    api_key = os.getenv("GEMINI_API_KEY", "").strip() or GEMINI_API_KEY
-    mode = "gemini_afc" if (api_key and api_key != "your_gemini_api_key_here") else "fallback"
+    mode = "gemini_afc" if has_gemini else "fallback"
 
-    # If no API key configured, use intelligent rule-based engine with memory
+    # If no API key configured or Gemini circuit-broken, use intelligent rule-based engine / OpenRouter
     if mode == "fallback":
-        result = await asyncio.to_thread(fallback_intent_parser, user_text, session_id=session_id)
+        # 1. Fast path: Direct deterministic intents (apps, websites, media, volume, system) execute in 1ms!
+        fallback_res = fallback_intent_parser(user_text, session_id=session_id)
+        if fallback_res and fallback_res.get("action") is not None:
+            latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            logger.info(
+                "Processed voice command via fast fallback intent parser",
+                extra={
+                    "session_id": session_id,
+                    "latency_ms": latency_ms,
+                    "mode": "fast_fallback_action",
+                    "success": True
+                }
+            )
+            return fallback_res
+
+        # 2. For open-ended conversation or questions, try OpenRouter only if enabled, available, and primary_provider != 'gemini'
+        if is_openrouter_available() and primary_provider != "gemini":
+            openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
+            elapsed = time.perf_counter() - t0
+            remaining_budget = max(0.0, 24.0 - elapsed)
+            if remaining_budget >= 4.0:
+                try:
+                    res = await _process_via_openrouter(
+                        user_text, session_id, openrouter_key, openrouter_model, timeout=min(remaining_budget, 10.0)
+                    )
+                    latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+                    logger.info("Processed voice command via OpenRouter fallback", extra={"session_id": session_id, "latency_ms": latency_ms, "mode": "openrouter", "success": True})
+                    return res
+                except Exception as e:
+                    err_str = str(e)
+                    if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+                        trip_openrouter_circuit_breaker(f"Rate limit 429: {err_str[:120]}", duration=3600.0)
+                    elif isinstance(e, asyncio.TimeoutError):
+                        trip_openrouter_circuit_breaker("OpenRouter call timed out", duration=180.0)
+
         latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.info(
             "Processed voice command via fallback",
@@ -1794,7 +2275,7 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
                 "success": True
             }
         )
-        return result
+        return fallback_res
 
     try:
         from google import genai
@@ -1806,24 +2287,63 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
             _persistent_client_key = api_key
         client = _persistent_genai_client
 
+        # --- ASTRA UPGRADE: DYNAMIC MEMORY & MCP INJECTION FOR GEMINI AFC START ---
+        mem_ctx = search_relevant_memories(user_text)
+        effective_gemini_instruction = get_effective_system_instruction(user_text, session_id=session_id)
+        if mem_ctx:
+            effective_gemini_instruction = (
+                f"{effective_gemini_instruction}\n\n"
+                f"[Persistent Long-Term Memory & User Preferences]:\n{mem_ctx}\n"
+            )
+
+        mcp_tools, _, _ = get_dynamic_mcp_tools_sync()
+        effective_gemini_tools = TOOLS_LIST + mcp_tools if mcp_tools else TOOLS_LIST
+        # --- ASTRA UPGRADE: DYNAMIC MEMORY & MCP INJECTION FOR GEMINI AFC END ---
+
         config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            tools=TOOLS_LIST,
+            system_instruction=effective_gemini_instruction,
+            tools=effective_gemini_tools,
             temperature=0.7
         )
 
-        model_name = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip() or "gemini-3.6-flash"
+        candidate_models = [primary_model]
+        for alt in ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-flash-latest"]:
+            if alt not in candidate_models:
+                candidate_models.append(alt)
 
-        # Persistent Multi-Turn Chat instance per session
-        chat = session_manager.get_or_create_chat(
-            session_id=session_id,
-            client=client,
-            model_name=model_name,
-            config=config
-        )
+        response = None
+        last_gemini_exc = None
+        for cand_model in candidate_models:
+            try:
+                # Persistent Multi-Turn Chat instance per session
+                chat = session_manager.get_or_create_chat(
+                    session_id=session_id,
+                    client=client,
+                    model_name=cand_model,
+                    config=config
+                )
+                response = await asyncio.wait_for(asyncio.to_thread(chat.send_message, user_text), timeout=10.0)
+                if response:
+                    break
+            except Exception as gemini_err:
+                last_gemini_exc = gemini_err
+                err_text = str(gemini_err)
+                if "429" in err_text or "RESOURCE_EXHAUSTED" in err_text or "retryDelay" in err_text:
+                    logger.warning(f"[Gemini] Quota/rate limit 429 on '{cand_model}'. Trying next candidate model...")
+                    continue
+                elif "not found" in err_text.lower():
+                    logger.warning(f"[Gemini] Model '{cand_model}' not found. Trying fallback model...")
+                    continue
+                raise gemini_err
 
-        # Send user text to persistent multi-turn chat in worker thread with responsive timeout (12s for tools & roundtrip)
-        response = await asyncio.wait_for(asyncio.to_thread(chat.send_message, user_text), timeout=12.0)
+        if not response and last_gemini_exc:
+            err_text = str(last_gemini_exc)
+            if "429" in err_text or "RESOURCE_EXHAUSTED" in err_text or "retryDelay" in err_text:
+                trip_gemini_circuit_breaker(err_text)
+                logger.warning(f"[Gemini] Quota/rate limit 429 on all candidate models. Tripped Gemini circuit breaker; bypassing remaining models.")
+            raise last_gemini_exc
+
         ai_response = response.text if response and response.text else "Kaam kar diya gaya hai."
 
         # Backend Failsafe: Clean markdown backticks and parse structured JSON
@@ -1920,6 +2440,29 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
                         message, contact = m.groups()
                 else:
                     contact, message = m.groups()
+
+            # Guard against conjunctions or invalid contact names extracted by LLM
+            if contact and (contact.strip().lower() in CONJUNCTIONS or contact.strip().lower() in NON_CONTACT_WORDS):
+                real_c, real_m, _ = extract_whatsapp_parameters(user_text)
+                if real_c:
+                    contact = real_c.capitalize()
+                    if real_m and not message:
+                        message = real_m
+                else:
+                    contact = None
+
+            if contact and not message:
+                session_manager.record_pending_whatsapp(session_id, contact.capitalize())
+                return {
+                    "reply": f"What message would you like to send to {contact.capitalize()}?",
+                    "action": {"status": "clarification_needed", "contact_name": contact.capitalize()}
+                }
+
+            if not contact:
+                return {
+                    "reply": "Who would you like to message on WhatsApp?",
+                    "action": {"status": "clarification_needed", "platform": "whatsapp"}
+                }
 
             if contact and message:
                 act_res = dispatch_action_safe("send_whatsapp_message", {"contact_name": contact, "message": message})
@@ -2101,15 +2644,75 @@ async def process_voice_command(user_text: str, session_id: str = "default") -> 
                 "success": True
             }
         )
+        # 1. Fast deterministic intent check: if command is an app, website, media, volume, or system command,
+        # fallback_intent_parser executes it in 1-5ms without waiting for slow cloud LLMs!
         try:
-            fallback = await asyncio.to_thread(fallback_intent_parser, user_text, session_id=session_id)
-            return fallback
+            fallback_res = fallback_intent_parser(user_text, session_id=session_id)
+            if fallback_res and fallback_res.get("action") is not None:
+                return fallback_res
         except Exception as fb_err:
             logger.error(f"Fallback recovery error: {fb_err}")
-            return {
+            fallback_res = {
                 "reply": "Kshama karein, main abhi yeh command process nahi kar pa raha hoon. Kripya dobara koshish karein.",
                 "action": {"status": "error", "error": str(fb_err)}
             }
+
+        # 2. Check remaining time budget before attempting OpenRouter
+        elapsed = time.perf_counter() - t0
+        remaining_budget = max(0.0, 24.0 - elapsed)
+
+        if is_openrouter_available() and not should_try_openrouter_first and remaining_budget >= 4.0:
+            try:
+                openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+                openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
+                return await _process_via_openrouter(
+                    user_text,
+                    session_id,
+                    openrouter_key,
+                    openrouter_model,
+                    timeout=min(remaining_budget, 10.0)
+                )
+            except Exception as or_err:
+                err_str = str(or_err)
+                if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+                    trip_openrouter_circuit_breaker(f"Rate limit 429: {err_str[:120]}", duration=3600.0)
+                elif isinstance(or_err, asyncio.TimeoutError):
+                    trip_openrouter_circuit_breaker("OpenRouter call timed out", duration=180.0)
+
+        return fallback_res
+
+# --- ASTRA UPGRADE: PERSIST LONG-TERM MEMORY (MEM0) WRAPPER START ---
+async def process_voice_command(user_text: str, session_id: str = "default", is_mobile: Optional[bool] = None) -> Dict[str, Any]:
+    """
+    Core brain connecting Voice Input -> Multi-Turn Session Memory -> OpenRouter / Gemini Tool Calling / Live API.
+    Asynchronously persists interactions to Mem0 long-term memory layer with zero latency penalty.
+    """
+    if not user_text or not isinstance(user_text, str) or not user_text.strip():
+        return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+    clean_text = user_text.strip()
+
+    if is_mobile is not None:
+        session_manager.set_user_data(session_id, "is_mobile", is_mobile)
+        session_manager.set_user_data(session_id, "device", "Mobile (Smartphone)" if is_mobile else "PC / Laptop")
+
+    use_live = os.getenv("USE_GEMINI_LIVE", "false").strip().lower() in ("true", "1", "yes")
+    if use_live:
+        try:
+            res = await run_live_session(clean_text, session_id=session_id, is_mobile=is_mobile)
+        except Exception as live_err:
+            logger.warning(f"[Gemini Live] Error in run_live_session: {live_err}. Falling back to standard pipeline.")
+            res = await _process_voice_command_core(clean_text, session_id=session_id, is_mobile=is_mobile)
+    else:
+        res = await _process_voice_command_core(clean_text, session_id=session_id, is_mobile=is_mobile)
+
+    try:
+        reply_text = res.get("reply", "") if isinstance(res, dict) else ""
+        if clean_text and reply_text:
+            add_interaction_memory_async(clean_text, reply_text)
+    except Exception as e:
+        logger.debug(f"[Mem0] Interaction persistence skipped: {e}")
+    return res
+# --- ASTRA UPGRADE: PERSIST LONG-TERM MEMORY (MEM0) WRAPPER END ---
 
 
 # Backward compatibility alias

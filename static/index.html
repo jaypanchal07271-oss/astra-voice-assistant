@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Astra - Gemini AI Voice Assistant</title>
+    <title>Astra - AI Voice Assistant Console</title>
     
     <!-- PWA Manifest & Mobile Web App Meta -->
     <link rel="manifest" href="/manifest.json">
@@ -15,152 +15,517 @@
     <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
 
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="bg-glow"></div>
+    <div class="bg-grid-pattern"></div>
 
-    <header class="top-nav">
-        <div class="logo">
-            <span class="sparkle">✦</span>
-            <span class="title">ASTRA</span>
-            <span class="badge">GEMINI LIVE</span>
-        </div>
+    <!-- Mobile Drawer Backdrop Overlay -->
+    <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
-        <div class="header-actions">
-            <!-- Wake Word Ambient Mode Toggle -->
-            <button id="wakeWordToggleBtn" class="wake-word-btn" title="Toggle Hands-Free Wake Word ('Hey Astra')">
-                <span class="pulse-icon">🎙️</span>
-                <span id="wakeWordText">Wake Word: OFF</span>
-            </button>
-
-            <!-- Push & Background Quick-Talk Toggle -->
-            <button id="pushNotificationBtn" class="push-btn" title="Enable Mobile Push & Background Quick-Talk">
-                <span class="bell-icon">🔔</span>
-                <span id="pushNotificationText">Alerts</span>
-            </button>
-
-            <!-- Language Selector -->
-            <div class="lang-selector">
-                <button class="lang-btn active" data-lang="auto">Auto</button>
-                <button class="lang-btn" data-lang="hi-IN">हिन्दी</button>
-                <button class="lang-btn" data-lang="en-IN">English</button>
-            </div>
-
-            <!-- API Key & Status -->
-            <button id="settingsBtn" class="icon-btn" title="Settings / API Key">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-            </button>
-        </div>
-    </header>
-
-    <main class="main-stage">
-        <!-- Status Label -->
-        <div class="status-container">
-            <span class="status-dot"></span>
-            <span id="statusText" class="status-text">Click Mic to Speak</span>
-        </div>
-
-        <!-- Animated Gemini Orb with Dusky Pink Ambient Glow -->
-        <div class="orb-container">
-            <div class="orb-pink-glow"></div>
-            <div class="orb-wrapper" id="orbWrapper">
-                <div class="orb-ring ring-3"></div>
-                <div class="orb-ring ring-2"></div>
-                <div class="orb-ring ring-1"></div>
-                <div class="orb-core" id="orbCore">
-                    <div class="orb-inner-light"></div>
+    <div class="app-layout" id="appLayout">
+        <!-- Collapsible Sidebar (Laptop) & Off-Canvas Drawer (Mobile) -->
+        <aside id="appSidebar" class="app-sidebar" aria-label="Sidebar Navigation">
+            <div class="sidebar-top">
+                <div class="sidebar-brand">
+                    <div class="sidebar-logo">
+                        <span class="sparkle" aria-hidden="true">✦</span>
+                        <span class="sidebar-title">ASTRA AI</span>
+                    </div>
+                    <button id="sidebarCloseBtn" class="sidebar-close-btn" title="Close Menu" aria-label="Close Sidebar">&times;</button>
+                    <button id="sidebarCollapseBtn" class="sidebar-collapse-btn" title="Toggle Sidebar" aria-label="Collapse Sidebar">«</button>
                 </div>
-            </div>
-        </div>
 
-        <!-- Multi-line Transcript History Area with Top Fade-Out Mask -->
-        <div class="transcript-history-container" id="transcriptHistoryContainer">
-            <div class="chat-messages" id="chatMessages">
-                <div class="chat-bubble assistant">
-                    <span class="bubble-sender">Astra</span>
-                    <p class="bubble-text" id="assistantReply">"Namaste! Bolo kya open karna hai?"</p>
-                </div>
-            </div>
-            <!-- Live Interim Speech Transcript Indicator -->
-            <div class="live-transcript-wrapper" id="liveTranscriptWrapper">
-                <span class="live-indicator-dot"></span>
-                <p id="liveTranscript" class="live-transcript"></p>
-            </div>
-        </div>
-
-        <!-- Voice-First Interaction Hub & Embedded Text Input -->
-        <div class="interaction-zone">
-            <!-- Prominent Voice-First Microphone Button with Continuous Shimmer -->
-            <div class="control-bar">
-                <button id="micBtn" class="mic-button voice-primary" title="Click to Talk (or press Spacebar)">
-                    <span class="mic-shimmer-ring"></span>
-                    <svg class="mic-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                        <line x1="12" y1="19" x2="12" y2="23"></line>
-                        <line x1="8" y1="23" x2="16" y2="23"></line>
-                    </svg>
+                <!-- New Chat Button -->
+                <button id="newChatBtn" class="new-chat-btn" title="Start a fresh conversation">
+                    <span class="new-chat-icon">+</span>
+                    <span>New Chat</span>
                 </button>
 
-                <!-- Instant Interrupt Button (appears when speaking) -->
-                <button id="interruptBtn" class="interrupt-btn hidden" title="Interrupt / Stop Astra (Press Esc or click)">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-                    </svg>
-                    <span>Interrupt (Esc)</span>
-                </button>
+                <!-- Recent Voice Sessions -->
+                <div class="sidebar-section-title">Recent Voice History</div>
+                <div id="sessionHistoryList" class="session-history-list">
+                    <div class="session-item active" data-cmd="Namaste! Bolo kya open karna hai?">
+                        <span class="session-icon">🎙️</span>
+                        <span class="session-label">Current Voice Session</span>
+                    </div>
+                    <div class="session-item" data-cmd="Play Bollywood hits on Spotify">
+                        <span class="session-icon">🎵</span>
+                        <span class="session-label">Bollywood on Spotify</span>
+                    </div>
+                    <div class="session-item" data-cmd="Send a WhatsApp message">
+                        <span class="session-icon">💬</span>
+                        <span class="session-label">WhatsApp Message</span>
+                    </div>
+                    <div class="session-item" data-cmd="What are the latest tech headlines?">
+                        <span class="session-icon">🌐</span>
+                        <span class="session-label">Latest Tech News</span>
+                    </div>
+                </div>
+
+                <!-- 21 MCP Server Tools Section -->
+                <div class="sidebar-section-title mcp-title-row">
+                    <span>MCP Server Tools</span>
+                    <span class="mcp-count-badge">21 Tools</span>
+                </div>
+                <div class="mcp-quick-tools">
+                    <div class="mcp-tool-chip" data-cmd="Search web using MCP Brave Search">
+                        <span class="mcp-tool-icon">⚡</span>
+                        <span class="mcp-tool-name">Brave Search API</span>
+                    </div>
+                    <div class="mcp-tool-chip" data-cmd="Inspect page with Chrome DevTools MCP">
+                        <span class="mcp-tool-icon">🌐</span>
+                        <span class="mcp-tool-name">Chrome DevTools</span>
+                    </div>
+                    <div class="mcp-tool-chip" data-cmd="Check files with MCP Filesystem tool">
+                        <span class="mcp-tool-icon">📁</span>
+                        <span class="mcp-tool-name">Filesystem Bridge</span>
+                    </div>
+                </div>
+
+                <!-- Quick Automations -->
+                <div class="sidebar-section-title">Automations</div>
+                <div class="automation-quick-list">
+                    <button class="auto-quick-chip" data-cmd="Open Spotify and play music"><span>🎵</span> Spotify Music</button>
+                    <button class="auto-quick-chip" data-cmd="Open WhatsApp"><span>💬</span> WhatsApp Web</button>
+                    <button class="auto-quick-chip" data-cmd="Open YouTube"><span>▶️</span> YouTube</button>
+                    <button class="auto-quick-chip" data-cmd="Open Google Chrome"><span>💻</span> System Apps</button>
+                </div>
             </div>
 
-            <!-- Sleek Input Field with Embedded Minimalist Paper Plane Send Icon -->
-            <div class="text-input-container">
-                <form id="textCommandForm" class="text-command-form" onsubmit="return false;">
-                    <input 
-                        type="text" 
-                        id="textCommandInput" 
-                        class="text-command-input" 
-                        placeholder="Ask Astra or type a command..." 
-                        autocomplete="off"
-                        spellcheck="false"
-                    />
-                    <button type="submit" id="sendTextBtn" class="send-text-btn" title="Send (Enter)">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            <div class="sidebar-footer">
+                <div class="sidebar-model-info">
+                    <span class="model-dot"></span>
+                    <span class="model-name">Gemini 2.5 Flash</span>
+                </div>
+                <button id="sidebarSettingsBtn" class="sidebar-settings-btn" title="Open Settings">⚙️</button>
+            </div>
+        </aside>
+
+        <!-- Main Workspace Area -->
+        <div class="app-main">
+            <!-- Non-overlapping Clean Top Navigation Bar -->
+            <header class="top-nav">
+                <!-- Left: Hamburger (Mobile) + Brand Cluster + Online Status -->
+                <div class="brand-cluster">
+                    <button id="mobileDrawerBtn" class="mobile-drawer-btn" title="Toggle Sidebar Menu" aria-label="Toggle Sidebar Menu">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
                         </svg>
                     </button>
-                </form>
-            </div>
-        </div>
-    </main>
 
-    <!-- Settings Modal -->
-    <div id="settingsModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Settings & Preferences</h3>
-                <button id="closeModalBtn" class="close-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="settings-group">
-                    <label for="wakeWordSelect">Wake Word Trigger Name:</label>
-                    <select id="wakeWordSelect" class="settings-select">
-                        <option value="both">Both ("Hey Astra" & "Hey Jarvis")</option>
-                        <option value="astra">"Hey Astra" (Default)</option>
-                        <option value="jarvis">"Hey Jarvis"</option>
-                    </select>
-                    <p class="help-text">Choose which wake word triggers ambient listening. Stored in browser storage.</p>
+                    <div class="logo">
+                        <span class="sparkle" aria-hidden="true">✦</span>
+                        <span class="title">ASTRA</span>
+                        <span class="badge desktop-only">AI LIVE</span>
+                    </div>
+
+                    <!-- Real-time Online / Offline Indicator Pill -->
+                    <div class="status-pill online" id="networkStatusPill" role="status" aria-label="Network Status">
+                        <span class="status-pill-dot" aria-hidden="true"></span>
+                        <span class="status-pill-text" id="networkStatusText">Online</span>
+                    </div>
                 </div>
 
-                <div class="settings-group">
-                    <label for="apiKeyInput">Google Gemini API Key:</label>
-                    <input type="password" id="apiKeyInput" placeholder="Paste your API key here...">
-                    <p class="help-text">Get a free key from <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>. (Tool works in offline fallback even without key for basic apps!).</p>
-                    <button id="saveKeyBtn" class="primary-btn">Save Key</button>
-                    <div id="saveStatus" class="save-status"></div>
+                <!-- Right: MCP Badge + Desktop Controls + Settings Cog -->
+                <div class="header-actions">
+                    <!-- Verified MCP Server Tool Bridge Badge -->
+                    <button class="mcp-badge not-configured" id="mcpHeaderBadge" title="View Model Context Protocol (MCP) status" aria-label="MCP Tool Bridge Status">
+                        <span class="mcp-icon" aria-hidden="true">⚡</span>
+                        <span class="mcp-badge-text" id="mcpBadgeText">21 Tools</span>
+                    </button>
+
+                    <!-- Desktop Only Controls -->
+                    <div class="desktop-controls">
+                        <!-- Wake Word Ambient Mode Toggle -->
+                        <button id="wakeWordToggleBtn" class="wake-word-btn" title="Toggle Hands-Free Wake Word ('Hey Astra')" aria-label="Toggle Wake Word Mode">
+                            <span class="pulse-icon" aria-hidden="true">🎙️</span>
+                            <span id="wakeWordText">Wake Word: OFF</span>
+                        </button>
+
+                        <!-- Push & Background Quick-Talk Toggle -->
+                        <button id="pushNotificationBtn" class="push-btn" title="Enable Mobile Push & Background Quick-Talk" aria-label="Notification Alerts">
+                            <span class="bell-icon" aria-hidden="true">🔔</span>
+                            <span id="pushNotificationText">Alerts</span>
+                        </button>
+
+                        <!-- Language Selector -->
+                        <div class="lang-selector" role="group" aria-label="Language Selector">
+                            <button class="lang-btn active" data-lang="auto" aria-label="Auto Language">Auto</button>
+                            <button class="lang-btn" data-lang="hi-IN" aria-label="Hindi Language">हिन्दी</button>
+                            <button class="lang-btn" data-lang="en-IN" aria-label="English Language">English</button>
+                        </div>
+                    </div>
+
+                    <!-- Settings & Console Button -->
+                    <button id="settingsBtn" class="icon-btn" title="Console Settings & MCP Panel" aria-label="Console Settings and Preferences">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Centered Conversational Stage -->
+            <main class="main-stage">
+                <!-- Gemini-Style Greeting Hero (Never clips on mobile) -->
+                <div class="welcome-hero" id="welcomeHero">
+                    <h1 class="welcome-headline">
+                        <span class="hero-sparkle" aria-hidden="true">✦</span>
+                        <span>Hello! How can I help today?</span>
+                    </h1>
+                    <p class="welcome-subtext">Tap the holographic orb or select an action below</p>
+                </div>
+
+                <!-- Unique 3D Gyroscopic Celestial Plasma AI Orb -->
+                <div class="orb-stage-wrapper">
+                    <!-- Real-time Voice Lifecycle Status Bar -->
+                    <div class="status-container" role="status" aria-live="polite">
+                        <span class="status-dot" id="statusDot" aria-hidden="true"></span>
+                        <span id="statusText" class="status-text">Tap to speak</span>
+                    </div>
+
+                    <div class="orb-visualizer-container">
+                        <!-- Left Soundwave Wing -->
+                        <div class="soundwave-wing left-wing" aria-hidden="true">
+                            <span class="wave-bar"></span>
+                            <span class="wave-bar"></span>
+                            <span class="wave-bar"></span>
+                            <span class="wave-bar"></span>
+                        </div>
+
+                        <!-- 3D Gyroscopic AI Orb -->
+                        <div class="orb-container">
+                            <div class="orb-pink-glow" aria-hidden="true"></div>
+                            <div class="orb-wrapper orb-idle" id="orbWrapper" role="button" aria-label="Toggle Voice Interaction" tabindex="0">
+                                <!-- 3D Gyroscopic Orbital Rings -->
+                                <div class="gyro-ring gyro-ring-1" aria-hidden="true"></div>
+                                <div class="gyro-ring gyro-ring-2" aria-hidden="true"></div>
+                                <div class="orb-ring ring-3" aria-hidden="true"></div>
+                                <div class="orb-ring ring-2" aria-hidden="true"></div>
+                                <div class="orb-ring ring-1" aria-hidden="true"></div>
+
+                                <!-- Iridescent Plasma Core -->
+                                <div class="orb-core plasma-core" id="orbCore">
+                                    <div class="orb-inner-light" aria-hidden="true"></div>
+                                    <!-- Audio Waveform Visualizer -->
+                                    <div class="orb-equalizer" id="orbEqualizer" aria-hidden="true">
+                                        <span class="eq-bar bar-1"></span>
+                                        <span class="eq-bar bar-2"></span>
+                                        <span class="eq-bar bar-3"></span>
+                                        <span class="eq-bar bar-4"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Soundwave Wing -->
+                        <div class="soundwave-wing right-wing" aria-hidden="true">
+                            <span class="wave-bar"></span>
+                            <span class="wave-bar"></span>
+                            <span class="wave-bar"></span>
+                            <span class="wave-bar"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Responsive Prompt Suggestion Deck (2x2 on Mobile, 4x1 on Laptop - Never Clips!) -->
+                <div class="prompt-deck-container" id="promptDeck">
+                    <div class="prompt-card" data-cmd="Play trending Bollywood hits on Spotify">
+                        <div class="prompt-card-icon">🎵</div>
+                        <div class="prompt-card-body">
+                            <div class="prompt-card-title">Play Music</div>
+                            <div class="prompt-card-desc">Bollywood on Spotify</div>
+                        </div>
+                    </div>
+
+                    <div class="prompt-card" data-cmd="What are the top tech headlines today?">
+                        <div class="prompt-card-icon">🌐</div>
+                        <div class="prompt-card-body">
+                            <div class="prompt-card-title">Search News</div>
+                            <div class="prompt-card-desc">Top tech headlines</div>
+                        </div>
+                    </div>
+
+                    <div class="prompt-card" data-cmd="Send a WhatsApp message">
+                        <div class="prompt-card-icon">💬</div>
+                        <div class="prompt-card-body">
+                            <div class="prompt-card-title">WhatsApp</div>
+                            <div class="prompt-card-desc">Automated message</div>
+                        </div>
+                    </div>
+
+                    <div class="prompt-card" data-cmd="Run Chrome DevTools and check MCP status">
+                        <div class="prompt-card-icon">⚡</div>
+                        <div class="prompt-card-body">
+                            <div class="prompt-card-title">21 MCP Tools</div>
+                            <div class="prompt-card-desc">DevTools & Brave API</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Conversation History Console -->
+                <div class="transcript-history-container" id="transcriptHistoryContainer" role="log" aria-label="Conversation Messages">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-bubble assistant">
+                            <div class="bubble-header">
+                                <span class="bubble-sender">Astra</span>
+                                <span class="bubble-time">Ready</span>
+                            </div>
+                            <div class="bubble-content">
+                                <p class="bubble-text" id="assistantReply">"Namaste! Bolo kya open karna hai?"</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Live Interim Speech Transcript Stream -->
+                    <div class="live-transcript-wrapper" id="liveTranscriptWrapper" aria-live="assertive">
+                        <span class="live-indicator-dot" aria-hidden="true"></span>
+                        <p id="liveTranscript" class="live-transcript"></p>
+                    </div>
+                </div>
+
+                <!-- Unified Floating Prompt Omnibar (Bottom Dock - Zero Clipping!) -->
+                <div class="interaction-zone">
+                    <div class="text-input-container">
+                        <div class="omnibar-dock">
+                            <button id="omnibarToolsBtn" class="omnibar-action-btn" title="Quick Prompt Starters" aria-label="Prompt Suggestions">
+                                <span aria-hidden="true">✨</span>
+                            </button>
+
+                            <form id="textCommandForm" class="text-command-form" onsubmit="return false;">
+                                <input 
+                                    type="text" 
+                                    id="textCommandInput" 
+                                    class="text-command-input" 
+                                    placeholder="Ask Astra or tap mic..." 
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-label="Text Command Input"
+                                />
+                            </form>
+
+                            <!-- Instant Interrupt Button (Active during speaking) -->
+                            <button id="interruptBtn" class="interrupt-btn hidden" title="Interrupt Assistant (Press Esc or click)" aria-label="Interrupt Assistant Audio Playback">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                                </svg>
+                                <span class="desktop-only">Stop</span>
+                            </button>
+
+                            <!-- Central Centerpiece Microphone Button (Never cut off) -->
+                            <button id="micBtn" class="mic-button voice-primary" title="Tap to speak (or press Spacebar)" aria-label="Microphone Button">
+                                <span class="mic-shimmer-ring" aria-hidden="true"></span>
+                                <span class="mic-pulse-ring" aria-hidden="true"></span>
+                                <svg class="mic-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                                </svg>
+                            </button>
+
+                            <!-- Minimal Send Button -->
+                            <button type="submit" id="sendTextBtn" class="send-text-btn" title="Send (Enter)" aria-label="Submit Text Command">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="omnibar-caption">Astra Voice Console • 21 MCP Tools & Multi-Turn Memory</div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Executive Settings & MCP Control Console Modal -->
+    <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-title-icon" aria-hidden="true">⚙️</span>
+                    <h3 id="modalTitle">Console & Settings</h3>
+                </div>
+                <button id="closeModalBtn" class="close-btn" aria-label="Close Settings Console">&times;</button>
+            </div>
+
+            <!-- Console Section Navigation Tabs -->
+            <div class="console-tabs" role="tablist" aria-label="Settings Categories">
+                <button class="tab-btn active" data-tab="general" role="tab" aria-selected="true" aria-controls="tab-general">General</button>
+                <button class="tab-btn" data-tab="ai" role="tab" aria-selected="false" aria-controls="tab-ai">AI Engine</button>
+                <button class="tab-btn" data-tab="voice" role="tab" aria-selected="false" aria-controls="tab-voice">Voice & Audio</button>
+                <button class="tab-btn" data-tab="mcp" id="mcpTabBtn" role="tab" aria-selected="false" aria-controls="tab-mcp">MCP Bridge</button>
+                <button class="tab-btn" data-tab="system" role="tab" aria-selected="false" aria-controls="tab-system">System</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- TAB 1: GENERAL -->
+                <div class="tab-pane active" id="tab-general" role="tabpanel" aria-labelledby="tab-btn-general">
+                    <div class="settings-group">
+                        <label for="wakeWordSelect" class="settings-label">Wake Word Trigger Name</label>
+                        <select id="wakeWordSelect" class="settings-select">
+                            <option value="both">Both ("Hey Astra" & "Hey Jarvis")</option>
+                            <option value="astra">"Hey Astra" (Default)</option>
+                            <option value="jarvis">"Hey Jarvis"</option>
+                        </select>
+                        <p class="help-text">Select which hands-free wake word triggers listening on desktop. Stored locally.</p>
+                    </div>
+
+                    <div class="settings-group">
+                        <label class="settings-label">Language & Locale</label>
+                        <p class="help-text">Astra supports dynamic Hinglish, Hindi, and Indian English with automatic intent translation.</p>
+                        <div class="badge-row">
+                            <span class="info-badge">Auto (Hinglish)</span>
+                            <span class="info-badge">hi-IN (Hindi)</span>
+                            <span class="info-badge">en-IN (English)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: AI ENGINE -->
+                <div class="tab-pane" id="tab-ai" role="tabpanel" aria-labelledby="tab-btn-ai">
+                    <div class="settings-group">
+                        <label class="settings-label">Primary Intelligence Model</label>
+                        <div class="status-card">
+                            <div class="status-card-header">
+                                <span class="card-pill active">Active</span>
+                                <span class="card-title">Gemini 3.6 Flash</span>
+                            </div>
+                            <p class="card-desc">Google AI Studio Automatic Function Calling (AFC) with resilient multi-model quota fallback.</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="apiKeyInput" class="settings-label">Google Gemini API Key</label>
+                        <div class="key-input-wrapper">
+                            <input type="password" id="apiKeyInput" class="settings-input" placeholder="Paste your API key here..." autocomplete="off">
+                            <button id="saveKeyBtn" class="primary-btn">Save Key</button>
+                        </div>
+                        <p class="help-text">Get a key from <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a>. Offline fallback works even without a key for basic system control.</p>
+                        <div id="saveStatus" class="save-status" role="alert"></div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label class="settings-label">Long-Term Memory Layer</label>
+                        <div class="status-card compact">
+                            <span class="status-indicator-dot online"></span>
+                            <span class="status-text-sm" id="memoryStatusText">Mem0 Persistent Memory Layer Connected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: VOICE & AUDIO -->
+                <div class="tab-pane" id="tab-voice" role="tabpanel" aria-labelledby="tab-btn-voice">
+                    <div class="settings-group">
+                        <label class="settings-label">Speech Recognition Engine</label>
+                        <div class="status-card compact">
+                            <span class="status-indicator-dot online"></span>
+                            <span class="status-text-sm" id="sttEngineText">Web Speech API (Desktop) / Continuous MediaRecorder (Mobile)</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label class="settings-label">Neural Text-to-Speech (TTS)</label>
+                        <div class="status-card">
+                            <div class="card-field"><span class="field-label">Engine:</span> Microsoft Edge Neural TTS</div>
+                            <div class="card-field"><span class="field-label">Hindi Voice:</span> hi-IN-SwaraNeural</div>
+                            <div class="card-field"><span class="field-label">English Voice:</span> en-IN-NeerjaNeural</div>
+                            <div class="card-field"><span class="field-label">Playback Pacing:</span> Natural Conversational (+18%)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: MCP BRIDGE -->
+                <div class="tab-pane" id="tab-mcp" role="tabpanel" aria-labelledby="tab-btn-mcp">
+                    <div class="settings-group">
+                        <div class="mcp-status-header">
+                            <label class="settings-label">Model Context Protocol (MCP) Status</label>
+                            <span class="mcp-status-pill not-configured" id="mcpModalStatusPill">
+                                <span class="mcp-pill-dot"></span>
+                                <span id="mcpModalStatusText">Not Configured</span>
+                            </span>
+                        </div>
+                        
+                        <div class="mcp-meta-grid">
+                            <div class="mcp-meta-item">
+                                <span class="mcp-meta-label">Server</span>
+                                <span class="mcp-meta-val" id="mcpServerName">None</span>
+                            </div>
+                            <div class="mcp-meta-item">
+                                <span class="mcp-meta-label">Protocol</span>
+                                <span class="mcp-meta-val">stdio</span>
+                            </div>
+                            <div class="mcp-meta-item">
+                                <span class="mcp-meta-label">Available Tools</span>
+                                <span class="mcp-meta-val" id="mcpToolCount">0</span>
+                            </div>
+                            <div class="mcp-meta-item">
+                                <span class="mcp-meta-label">Last Activity</span>
+                                <span class="mcp-meta-val text-truncate" id="mcpLastActivity">No MCP activity yet.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label class="settings-label">Discovered MCP Tools</label>
+                        <div class="mcp-tools-container" id="mcpToolsList">
+                            <div class="mcp-empty-state">
+                                <span class="empty-icon">🔌</span>
+                                <p class="empty-title">MCP is not configured</p>
+                                <p class="empty-subtitle">Set <code>MCP_ENABLED=true</code> and <code>MCP_SERVER_COMMAND</code> in <code>.env</code> to connect external MCP servers (e.g. Brave Search, File System).</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label class="settings-label">MCP Safe Activity Log</label>
+                        <div class="mcp-activity-log" id="mcpActivityFeed">
+                            <div class="activity-empty-msg">No MCP activity yet.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 5: SYSTEM & NETWORK -->
+                <div class="tab-pane" id="tab-system" role="tabpanel" aria-labelledby="tab-btn-system">
+                    <div class="settings-group">
+                        <label class="settings-label">System Connections</label>
+                        <div class="system-grid">
+                            <div class="system-item">
+                                <span class="system-icon">💻</span>
+                                <div class="system-info">
+                                    <span class="system-name">Local PC Control Agent</span>
+                                    <span class="system-status" id="executorStatusText">Checking connection...</span>
+                                </div>
+                            </div>
+                            <div class="system-item">
+                                <span class="system-icon">🌐</span>
+                                <div class="system-info">
+                                    <span class="system-name">Cloudflare HTTPS Tunnel</span>
+                                    <span class="system-status" id="tunnelStatusContainer">Active</span>
+                                </div>
+                            </div>
+                            <div class="system-item">
+                                <span class="system-icon">🛡️</span>
+                                <div class="system-info">
+                                    <span class="system-name">Security & Session Auth</span>
+                                    <span class="system-status text-emerald">Token Verified</span>
+                                </div>
+                            </div>
+                            <div class="system-item">
+                                <span class="system-icon">🚀</span>
+                                <div class="system-info">
+                                    <span class="system-name">Architecture</span>
+                                    <span class="system-status">Astra 2.0 Antigravity Live</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

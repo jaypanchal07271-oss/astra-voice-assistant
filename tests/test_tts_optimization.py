@@ -68,7 +68,8 @@ async def test_generate_audio_applies_voice_tuning():
 
         mock_instance.save = fake_save
 
-        url = await generate_audio("Namaste, main aapki sahayata ke liye taiyar hoon.", lang="hi-IN")
+        with patch.dict("os.environ", {"TTS_RATE": "+10%", "TTS_PITCH": "+2Hz"}):
+            url = await generate_audio("Namaste, main aapki sahayata ke liye taiyar hoon.", lang="hi-IN")
 
         assert url.startswith("/static/audio/speech_")
         assert url.endswith(".mp3")

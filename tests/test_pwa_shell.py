@@ -125,23 +125,29 @@ def test_voice_upload_endpoint_authenticated_roundtrip():
     """
     fake_audio = io.BytesIO(b"RIFF" + b"\x00" * 300)
 
-    # Mock process_voice_command and generate_audio to avoid external API dependencies
-    with patch("app.process_voice_command", return_value={"reply": "Namaste! Main Astra hoon.", "action": {"status": "conversation"}}) as mock_brain:
-        with patch("app.generate_audio", return_value="/static/audio/test_speech.mp3"):
-            response = client.post(
-                "/api/voice_upload",
-                files={"audio_file": ("test.webm", fake_audio, "audio/webm")},
-                data={"session_id": "test_pwa_voice", "lang": "hi-IN"},
-                headers=AUTH_HEADERS
-            )
+    # Mock Gemini transcription, process_voice_command and generate_audio to avoid external API dependencies
+    mock_genai_client = MagicMock()
+    mock_model_res = MagicMock()
+    mock_model_res.text = "Namaste"
+    mock_genai_client.models.generate_content.return_value = mock_model_res
 
-            assert response.status_code == 200
-            data = response.json()
-            assert "reply" in data
-            assert data["reply"] == "Namaste! Main Astra hoon."
-            assert data["audio_url"] == "/static/audio/test_speech.mp3"
-            assert "transcript" in data
-            mock_brain.assert_called_once()
+    with patch("google.genai.Client", return_value=mock_genai_client), \
+         patch("app.process_voice_command", return_value={"reply": "Namaste! Main Astra hoon.", "action": {"status": "conversation"}}) as mock_brain, \
+         patch("app.generate_audio", return_value="/static/audio/test_speech.mp3"):
+        response = client.post(
+            "/api/voice_upload",
+            files={"audio_file": ("test.webm", fake_audio, "audio/webm")},
+            data={"session_id": "test_pwa_voice", "lang": "hi-IN"},
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "reply" in data
+        assert data["reply"] == "Namaste! Main Astra hoon."
+        assert data["audio_url"] == "/static/audio/test_speech.mp3"
+        assert "transcript" in data
+        mock_brain.assert_called_once()
 
 
 def test_style_css_mobile_responsive_breakpoints():

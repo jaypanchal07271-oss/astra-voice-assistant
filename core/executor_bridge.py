@@ -191,21 +191,38 @@ class ExecutorBridge:
         except RuntimeError:
             current_loop = None
 
-        if current_loop is loop:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                fut = pool.submit(
-                    lambda: asyncio.run_coroutine_threadsafe(
-                        self.execute_remote_tool(tool_name, params, timeout),
-                        loop
-                    ).result(timeout=timeout + 1.0)
-                )
-                return fut.result()
-        else:
-            fut = asyncio.run_coroutine_threadsafe(
-                self.execute_remote_tool(tool_name, params, timeout),
-                loop
-            )
+        # Check if caller is on the same event loop - blocking with .result() causes deadlock!
+        if current_loop is not None and loop is not None and current_loop is loop:
+            import core.actions as actions
+            func = getattr(actions, tool_name, None)
+            if func:
+                try:
+                    return func(**(params or {}))
+                except Exception as e:
+                    logger.error(f"Local direct execution error for '{tool_name}': {e}")
+                    return {"success": False, "status": "error", "message": str(e)}
+
+        fut = asyncio.run_coroutine_threadsafe(
+            self.execute_remote_tool(tool_name, params, timeout),
+            loop
+        )
+        try:
             return fut.result(timeout=timeout + 1.0)
+        except Exception as e:
+            logger.warning(f"Executor dispatch_sync error ({e}); falling back to local action.")
+            import core.actions as actions
+            func = getattr(actions, tool_name, None)
+            if func:
+                try:
+                    return func(**(params or {}))
+                except Exception:
+                    pass
+            return {
+                "success": False,
+                "status": "error",
+                "message": f"Executor error: {e}",
+                "error": str(e)
+            }
 
 
 # Global singleton

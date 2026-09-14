@@ -2,11 +2,67 @@ import os
 import sys
 import time
 import socket
+import warnings
 import webbrowser
 import threading
 import uvicorn
 import subprocess
-from config import HOST, PORT, LAN_IP, USE_TUNNEL
+
+# Suppress harmless Python 3.14 deprecation warnings & Google SDK advisory notices
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
+
+# Suppress harmless "Invalid HTTP request received" spam from browsers probing HTTPS on HTTP port
+import logging
+
+class SuppressInvalidHTTPRequestFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Invalid HTTP request received" not in record.getMessage()
+
+logging.getLogger("uvicorn.error").addFilter(SuppressInvalidHTTPRequestFilter())
+
+# Silence Windows asyncio WinError 10054 bug in Python ProactorEventLoop
+if sys.platform == "win32":
+    try:
+        import asyncio.proactor_events
+        _orig_call_connection_lost = asyncio.proactor_events._ProactorBasePipeTransport._call_connection_lost
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+        def _patched_call_connection_lost(self, exc):
+            if getattr(self, '_called_connection_lost', False):
+                return
+            try:
+                if hasattr(self, '_protocol') and self._protocol is not None:
+                    self._protocol.connection_lost(exc)
+            finally:
+                if hasattr(self, '_sock') and self._sock is not None:
+                    if hasattr(self._sock, 'shutdown') and self._sock.fileno() != -1:
+                        try:
+                            self._sock.shutdown(socket.SHUT_RDWR)
+                        except (OSError, ConnectionResetError):
+                            pass
+                    try:
+                        self._sock.close()
+                    except Exception:
+                        pass
+                    self._sock = None
+                server = getattr(self, '_server', None)
+                if server is not None:
+                    try:
+                        server._detach(self)
+                    except Exception:
+                        pass
+                    self._server = None
+                self._called_connection_lost = True
+
+        asyncio.proactor_events._ProactorBasePipeTransport._call_connection_lost = _patched_call_connection_lost
+    except Exception:
+        pass
+
+from config import HOST, PORT, LAN_IP, USE_TUNNEL, USE_SSL, SSL_KEYFILE, SSL_CERTFILE
 
 
 def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
@@ -188,8 +244,9 @@ def main():
     free_port_if_occupied(PORT)
 
     local_ip = LAN_IP or get_local_ip()
-    local_url = f"http://127.0.0.1:{PORT}"
-    mobile_url = f"http://{local_ip}:{PORT}"
+    protocol = "https" if USE_SSL else "http"
+    local_url = f"{protocol}://127.0.0.1:{PORT}"
+    mobile_url = f"{protocol}://{local_ip}:{PORT}"
 
     tunnel_proc = None
     tunnel_url = None
@@ -203,14 +260,20 @@ def main():
         except Exception as e:
             print(f"[!] Warning: Could not start Cloudflare Tunnel: {e}")
 
+    if USE_SSL:
+        print(f"[*] HTTPS Status   : Enabled (Native SSL cert: {SSL_CERTFILE})")
+    elif USE_TUNNEL:
+        print(f"[*] HTTPS Status   : Enabled via Cloudflare Tunnel")
+    else:
+        print(f"[*] HTTPS Status   : Disabled (Set USE_TUNNEL=true or SSL_KEYFILE/SSL_CERTFILE in .env)")
+
     print(f"[*] Local URL      : {local_url}")
     if tunnel_url:
         print(f"[*] 📱 Open on mobile: {tunnel_url}")
+        print(f"[*] [Mobile HTTPS] : {tunnel_url}")
         print(f"[*] LAN Fallback   : {mobile_url} (LAN IP: {local_ip})")
     else:
         print(f"[*] Open on mobile : {mobile_url} (LAN IP: {local_ip})")
-        if not USE_TUNNEL:
-            print(f"[*] HTTPS Tunnel   : Disabled (Set USE_TUNNEL=true in .env to enable HTTPS for mobile mic/push)")
 
     if HOST == "0.0.0.0":
         print(f"[*] Network Status : Listening on all interfaces (0.0.0.0:{PORT})")
@@ -244,8 +307,13 @@ def main():
     threading.Thread(target=background_service_worker, daemon=True).start()
 
     # Run FastAPI server
+    ssl_kwargs = {}
+    if USE_SSL:
+        ssl_kwargs["ssl_keyfile"] = SSL_KEYFILE
+        ssl_kwargs["ssl_certfile"] = SSL_CERTFILE
+
     try:
-        uvicorn.run("app:app", host=HOST, port=PORT, reload=False, log_level="info")
+        uvicorn.run("app:app", host=HOST, port=PORT, reload=False, log_level="info", **ssl_kwargs)
     except KeyboardInterrupt:
         print("\n[Astra] Shutting down gracefully. Goodbye!")
     finally:

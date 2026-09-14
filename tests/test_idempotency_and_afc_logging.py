@@ -76,6 +76,33 @@ def test_play_youtube_video_idempotency_suppresses_duplicate_calls():
         assert mock_launch.call_count == 1
 
 
+def test_search_instagram_user_idempotency_suppresses_duplicate_calls():
+    with patch.object(actions, "_launch_browser_url", return_value=True) as mock_launch:
+        # First call
+        res1 = actions.search_instagram_user("elonmusk")
+        assert res1.get("success") is True
+        assert res1.get("duplicate_suppressed") is not True
+        assert mock_launch.call_count == 1
+
+        # Second call within 3 seconds (e.g. AFC + hybrid interception)
+        res2 = actions.search_instagram_user("elonmusk")
+        assert res2.get("success") is True
+        assert res2.get("duplicate_suppressed") is True
+        assert mock_launch.call_count == 1  # Suppressed! Still 1!
+
+        # Third call (e.g. open_website nudging instagram)
+        res3 = actions.search_instagram_user("@elonmusk")
+        assert res3.get("success") is True
+        assert res3.get("duplicate_suppressed") is True
+        assert mock_launch.call_count == 1  # Suppressed! Still 1!
+
+        # Different user should NOT be suppressed
+        res4 = actions.search_instagram_user("zuck")
+        assert res4.get("success") is True
+        assert res4.get("duplicate_suppressed") is not True
+        assert mock_launch.call_count == 2
+
+
 def test_idempotency_cache_expires_after_window():
     with patch.object(actions, "_launch_browser_url", return_value=True) as mock_launch:
         # First call

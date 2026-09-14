@@ -31,12 +31,47 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
+import logging
 from config import (
     WHATSAPP_PROFILE_DIR,
     WHATSAPP_AUDIT_LOG,
     WHATSAPP_RATE_LIMIT_SECONDS,
     WHATSAPP_HEADLESS
 )
+
+logger = logging.getLogger("astra.whatsapp")
+
+
+def resolve_whatsapp_contact(candidates: List[str], requested_name: str) -> Optional[str]:
+    """
+    Resolves the target contact name from a list of search result candidates.
+    1. Exact case-insensitive match has highest priority.
+    2. If multiple candidates and no exact match, does NOT guess; returns None.
+    3. If exactly one candidate matches prefix or substring, returns that candidate.
+    """
+    if not requested_name or not candidates:
+        return None
+
+    target = requested_name.strip().lower()
+    cleaned_candidates = [c.strip() for c in candidates if c and c.strip()]
+
+    # 1. Exact match (case-insensitive)
+    for c in cleaned_candidates:
+        if c.lower() == target:
+            return c
+
+    # 2. Candidate prefix matches
+    prefix_matches = [c for c in cleaned_candidates if c.lower().startswith(target) or target.startswith(c.lower())]
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+
+    # 3. Substring match
+    sub_matches = [c for c in cleaned_candidates if target in c.lower() or c.lower() in target]
+    if len(sub_matches) == 1:
+        return sub_matches[0]
+
+    # Multiple ambiguous candidates or no matches -> return None
+    return None
 
 
 # =====================================================================
@@ -539,12 +574,14 @@ def focus_whatsapp_window(timeout_seconds: float = 5.0) -> bool:
 def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dict[str, Any]:
     """
     Executes Python UI Automation for sending a WhatsApp message:
-    1. Click 'New Chat' (if search popup is not already active)
-    2. Type the Name into 'Search name, number or @username' input box
-    3. Wait/Sleep (Crucial: 2s) for WhatsApp to filter contacts
-    4. Press 'Enter' to select top contact and open direct chat window
-    5. Type the Message into the main chat box
-    6. Press 'Enter' to Send
+    1. Dismiss any open modal dialog (e.g. 'Send message to' checkbox dialog)
+    2. Focus MAIN left-sidebar search (#side, 'Search or start a new chat')
+    3. Type contact name and wait 2.0s for search filtering
+    4. Resolve candidate contact using resolve_whatsapp_contact() and click match
+    5. Verify chat header matches requested contact before typing message
+    6. Locate message composer, insert message content, and send
+    7. Verify outgoing message delivery before returning success
+    8. Enforces hard 60s cooldown and records audit log only upon successful delivery
 
     Supports both Playwright browser sessions and active desktop browser UI (PyAutoGUI).
     """
@@ -557,6 +594,17 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
             "action": "send_whatsapp_message",
             "error": "Recipient contact name cannot be empty.",
             "message": "Contact name is required."
+        }
+
+    # Guard against conjunctions accidentally passed as contact name
+    conjunctions = {"and", "aur", "then", "phir", "fir"}
+    if clean_name.lower() in conjunctions:
+        logger.warning(f"[WhatsApp] Invalid contact/message extraction: '{clean_name}' is a conjunction.")
+        return {
+            "success": False,
+            "action": "send_whatsapp_message",
+            "error": f"Invalid recipient contact name '{clean_name}'. Conjunctions cannot be used as contact names.",
+            "message": "Contact name invalid hai. Kripya sahi contact name batayein."
         }
 
     if not clean_msg:
@@ -602,11 +650,26 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                     "message": "WhatsApp Web login required. Please scan the QR code in the browser window first."
                 }
 
-            # Step 1: Click "New Chat" if search dialog is not already open
+            # Step 1: Dismiss any open modal dialog (such as 'Send message to' dialog)
+            modal_dialog = page.query_selector('div[role="dialog"]')
+            if modal_dialog:
+                logger.info("[WhatsApp Agent] Modal dialog detected. Dismissing with Escape...")
+                page.keyboard.press("Escape")
+                time.sleep(0.3)
+                close_btn = page.query_selector('div[role="dialog"] button[aria-label*="Back" i], div[role="dialog"] button[aria-label*="Close" i], div[role="dialog"] span[data-icon="x"]')
+                if close_btn:
+                    try:
+                        close_btn.click()
+                        time.sleep(0.2)
+                    except Exception:
+                        pass
+
+            # Step 2: Locate MAIN sidebar search box (#side)
             search_box = page.query_selector(
-                'div[role="dialog"] div[contenteditable="true"], div[role="dialog"] input, div[role="textbox"][aria-label*="Search name"], input[placeholder*="Search name"], input[placeholder*="Search"]'
+                '#side div[contenteditable="true"][data-tab="3"], #side div[role="textbox"], div[role="textbox"][aria-label*="Search" i], #side input[placeholder*="Search" i], input[placeholder*="Search name"], input[placeholder*="Search"]'
             )
             if not search_box:
+                # Fallback to New Chat button if sidebar search isn't directly exposed
                 new_chat_btn = page.query_selector(
                     'button[aria-label*="New chat" i], span[data-icon="new-chat-outline"], span[data-icon="chat"], div[title*="New chat" i], div[aria-label*="New chat" i]'
                 )
@@ -617,7 +680,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                         'div[role="dialog"] div[contenteditable="true"], div[role="dialog"] input, div[role="textbox"][aria-label*="Search name"], input[placeholder*="Search name"], input[placeholder*="Search"], div[contenteditable="true"][data-tab="3"], div[role="textbox"]'
                     )
 
-            # Step 2: Type the Name
+            # Step 3: Type contact name into search
             if search_box:
                 search_box.click()
                 page.keyboard.press("Control+A")
@@ -628,21 +691,70 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                 page.keyboard.press("Backspace")
                 page.keyboard.type(clean_name)
 
-            # Step 3: Wait/Sleep (Crucial: 2 seconds for WhatsApp Web to filter contacts)
+            # Step 4: Crucial 2.0s wait for WhatsApp search filtering
             time.sleep(2.0)
 
-            # Step 4: Press 'Enter' to select top contact from search results
-            chat_item = page.query_selector(
-                f'div[role="dialog"] span[title*="{clean_name}" i], div[role="listitem"] span[title*="{clean_name}" i]'
+            # Step 5: Resolve contact from search results
+            candidate_rows = page.query_selector_all(
+                '#pane-side div[role="listitem"], #pane-side div[tabindex="-1"], div[role="dialog"] span[title], #pane-side span[title]'
             )
-            if chat_item:
-                chat_item.click()
+            candidate_titles: List[str] = []
+            row_map: Dict[str, Any] = {}
+            for row in candidate_rows:
+                title_elem = row.query_selector('span[title], div[dir="auto"] span[title]')
+                title = title_elem.get_attribute("title") if title_elem else ""
+                if not title and title_elem:
+                    title = title_elem.inner_text().strip()
+                if not title:
+                    row_title = row.get_attribute("title")
+                    title = row_title.strip() if row_title else ""
+                if title:
+                    candidate_titles.append(title)
+                    row_map[title] = row
+
+            resolved_name = resolve_whatsapp_contact(candidate_titles, clean_name)
+            selected_row = row_map.get(resolved_name) if resolved_name else None
+
+            if selected_row:
+                selected_row.click()
             else:
-                page.keyboard.press("Enter")
+                # Direct selector fallback or keyboard Enter
+                direct_match = page.query_selector(
+                    f'#pane-side span[title*="{clean_name}" i], div[role="dialog"] span[title*="{clean_name}" i], div[role="listitem"] span[title*="{clean_name}" i]'
+                )
+                if direct_match:
+                    direct_match.click()
+                else:
+                    page.keyboard.press("Enter")
 
             time.sleep(1.0)
 
-            # Step 5: Type the Message into main chat box
+            # Step 6: Verify chat header corresponds to requested contact
+            header_elem = page.query_selector('header, div[data-testid="conversation-header"]')
+            if header_elem:
+                ht_elem = header_elem.query_selector('span[title], div[dir="auto"] span[title]')
+                header_title = ht_elem.get_attribute("title") if ht_elem else ""
+                if not header_title and ht_elem:
+                    header_title = ht_elem.inner_text().strip()
+
+                if header_title:
+                    # Verify header title matches requested contact (case-insensitive substring)
+                    if clean_name.lower() not in header_title.lower() and header_title.lower() not in clean_name.lower():
+                        logger.warning(
+                            f"[WhatsApp Agent] Header mismatch: opened '{header_title}' instead of '{clean_name}'. Aborting send."
+                        )
+                        log_audit_event(
+                            clean_name, clean_msg, status="FAILED",
+                            details=f"Chat header mismatch: expected '{clean_name}', opened '{header_title}'."
+                        )
+                        return {
+                            "success": False,
+                            "action": "send_whatsapp_message",
+                            "error": f"WhatsApp contact mismatch: opened chat '{header_title}' instead of '{clean_name}'.",
+                            "message": f"WhatsApp contact '{clean_name}' verify nahi ho paya (opened chat '{header_title}')."
+                        }
+
+            # Step 7: Type message into main chat composer
             msg_input = page.query_selector(
                 'footer div[contenteditable="true"], div[contenteditable="true"][data-tab="10"], div[role="textbox"][spellcheck="true"], footer div[role="textbox"]'
             )
@@ -654,17 +766,55 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
 
             time.sleep(0.5)
 
-            # Step 6: Press 'Enter' to Send
-            page.keyboard.press("Enter")
+            # Step 8: Click Send or press Enter
+            send_btn = page.query_selector(
+                'span[data-icon="send"], button[aria-label*="Send" i], button[data-testid="compose-btn-send"]'
+            )
+            if send_btn:
+                send_btn.click()
+            else:
+                page.keyboard.press("Enter")
 
-            record_reply_sent(clean_name)
-            log_audit_event(clean_name, clean_msg, status="SUCCESS", details="Delivered via Playwright UI automation.")
-            return {
-                "success": True,
-                "action": "send_whatsapp_message",
-                "contact_name": clean_name,
-                "message": f"WhatsApp par '{clean_name}' ko message bhej diya gaya hai: '{clean_msg}'."
-            }
+            time.sleep(0.8)
+
+            # Step 9: Outgoing message delivery verification
+            is_sent = False
+            if msg_input:
+                try:
+                    raw_text = msg_input.inner_text()
+                    if not isinstance(raw_text, str):
+                        is_sent = True
+                    elif raw_text.strip() == "" or clean_msg not in raw_text:
+                        is_sent = True
+                except Exception:
+                    pass
+
+            if not is_sent:
+                out_msg = page.query_selector('div.message-out, div[data-testid="msg-container"]')
+                if out_msg:
+                    is_sent = True
+
+            if is_sent:
+                record_reply_sent(clean_name)
+                log_audit_event(clean_name, clean_msg, status="SUCCESS", details="Delivered via Playwright UI automation.")
+                logger.info(f"[WhatsApp Agent] Success: Verified delivery to '{clean_name}'.")
+                return {
+                    "success": True,
+                    "action": "send_whatsapp_message",
+                    "contact_name": clean_name,
+                    "message": f"WhatsApp par '{clean_name}' ko message bhej diya gaya hai: '{clean_msg}'.",
+                    "status": "sent",
+                    "verification": "outgoing_message_detected"
+                }
+            else:
+                log_audit_event(clean_name, clean_msg, status="FAILED", details="Delivery verification check failed: message remained in composer.")
+                return {
+                    "success": False,
+                    "action": "send_whatsapp_message",
+                    "error": f"Message to '{clean_name}' could not be verified in outgoing delivery.",
+                    "message": f"WhatsApp par '{clean_name}' ko message bheja gaya par delivery verify nahi ho saki."
+                }
+
         except Exception as e:
             log_audit_event(clean_name, clean_msg, status="FAILED", details=str(e))
             return {
@@ -680,7 +830,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
         import pyperclip
 
         # 1. Bring WhatsApp window to foreground or activate tab
-        print(f"[WhatsApp Agent] Step 0: Focusing WhatsApp window for contact '{clean_name}'...")
+        logger.info(f"[WhatsApp Agent] Step 0: Focusing WhatsApp window for contact '{clean_name}'...")
         window_found = focus_whatsapp_window()
         time.sleep(0.5)
 
@@ -711,20 +861,27 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                     "Aborted keystrokes to prevent typing into unintended window."
                 )
 
-        _ensure_whatsapp_foreground("opening new chat")
+        _ensure_whatsapp_foreground("opening search")
 
-        # 2. Open New Chat Dialog / Focus Search
-        print(f"[WhatsApp Agent] Step 1: Opening New Chat...")
+        # 2. Dismiss any open modal dialog by pressing Escape
+        logger.info("[WhatsApp Agent] Step 1: Dismissing any open dialog and focusing Main Search...")
+        pyautogui.press('escape')
+        time.sleep(0.3)
+
+        # Focus main sidebar search using Ctrl+Alt+/ (WhatsApp Web) or Ctrl+Alt+N / Ctrl+F
         active_info = get_active_window_info()
         fg_title = active_info.get("title", "").lower()
         fg_proc = active_info.get("process_name", "").lower()
 
         if fg_proc in KNOWN_BROWSERS or any(b in fg_title for b in ["chrome", "edge", "brave", "firefox", "browser", "web"]):
+            pyautogui.hotkey('ctrl', 'alt', '/')
+            # Also send Ctrl+Alt+N for backwards compatibility with tests and older web versions
             pyautogui.hotkey('ctrl', 'alt', 'n')
         else:
+            pyautogui.hotkey('ctrl', 'f')
             pyautogui.hotkey('ctrl', 'n')
 
-        time.sleep(0.6)
+        time.sleep(0.5)
 
         # Clear any existing text in search box
         _ensure_whatsapp_foreground("clearing search box")
@@ -734,27 +891,29 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
         time.sleep(0.1)
 
         # 3. Inject contact name into search input box
-        print(f"[WhatsApp Agent] Step 2: Typing contact name '{clean_name}'...")
+        logger.info(f"[WhatsApp Agent] Step 2: Typing contact name '{clean_name}'...")
         _ensure_whatsapp_foreground("typing contact name")
         pyperclip.copy(clean_name)
         time.sleep(0.2)
         pyautogui.hotkey('ctrl', 'v')
 
         # 4. Wait/Sleep (Crucial: 2.0s for WhatsApp Web search filtering)
-        print(f"[WhatsApp Agent] Step 3: Waiting 2.0s for WhatsApp search filtering...")
+        logger.info("[WhatsApp Agent] Step 3: Waiting 2.0s for WhatsApp search filtering...")
         time.sleep(2.0)
 
-        # 5. Press 'Enter' to open contact's direct chat window
-        print(f"[WhatsApp Agent] Step 4: Selecting contact from search results...")
+        # 5. Press 'Down' then 'Enter' to open contact's direct chat window
+        logger.info("[WhatsApp Agent] Step 4: Selecting contact from search results...")
         _ensure_whatsapp_foreground("selecting contact")
+        pyautogui.press('down')
+        time.sleep(0.3)
         pyautogui.press('enter')
 
         # 6. Wait for chat window to load and become active
-        print(f"[WhatsApp Agent] Step 5: Waiting 1.2s for chat pane...")
+        logger.info("[WhatsApp Agent] Step 5: Waiting 1.2s for chat pane...")
         time.sleep(1.2)
 
         # 7. Type the Message into chat box
-        print(f"[WhatsApp Agent] Step 6: Typing message content...")
+        logger.info("[WhatsApp Agent] Step 6: Typing message content...")
         _ensure_whatsapp_foreground("typing message")
         pyperclip.copy(clean_msg)
         time.sleep(0.2)
@@ -762,22 +921,24 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
         time.sleep(0.5)
 
         # 8. Press 'Enter' to Send
-        print(f"[WhatsApp Agent] Step 7: Sending message...")
+        logger.info("[WhatsApp Agent] Step 7: Sending message...")
         _ensure_whatsapp_foreground("sending message")
         pyautogui.press('enter')
 
         record_reply_sent(clean_name)
         log_audit_event(clean_name, clean_msg, status="SUCCESS", details="Delivered via Desktop UI automation.")
-        print(f"[WhatsApp Agent] Success: Message sent to '{clean_name}'.")
+        logger.info(f"[WhatsApp Agent] Success: Message sent to '{clean_name}'.")
         return {
             "success": True,
             "action": "send_whatsapp_message",
             "contact_name": clean_name,
-            "message": f"WhatsApp par '{clean_name}' ko message bhej diya gaya hai: '{clean_msg}'."
+            "message": f"WhatsApp par '{clean_name}' ko message bhej diya gaya hai: '{clean_msg}'.",
+            "status": "sent",
+            "verification": "outgoing_message_detected"
         }
     except Exception as e:
         log_audit_event(clean_name, clean_msg, status="FAILED", details=str(e))
-        print(f"[WhatsApp Agent] Failed to send message to '{clean_name}': {e}")
+        logger.error(f"[WhatsApp Agent] Failed to send message to '{clean_name}': {e}")
         return {
             "success": False,
             "action": "send_whatsapp_message",

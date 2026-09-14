@@ -447,9 +447,14 @@ def test_send_whatsapp_message_ui_desktop_full_flow(monkeypatch):
     # Verify crucial 2.0s sleep and 1.2s sleep
     assert 2.0 in sleeps
     assert 1.2 in sleeps
-    # Verify Enter was pressed to select contact and to send message
+    # Verify Down was pressed to navigate into search results and Enter to select and send
+    assert ('down',) in press_calls
     assert ('enter',) in press_calls
     assert press_calls.count(('enter',)) >= 2
+    # Verify Down was pressed before the first Enter
+    down_idx = press_calls.index(('down',))
+    first_enter_idx = press_calls.index(('enter',))
+    assert down_idx < first_enter_idx
 
 
 def test_whatsapp_send_chat_shivam_say_hello(monkeypatch):
@@ -538,7 +543,140 @@ def test_whatsapp_parsing_edge_cases(monkeypatch):
     assert sent[1][1] == "kal test hai"
 
 
+# =====================================================================
+# Tests for Contact Resolution & Direct UI Verification Overhaul
+# =====================================================================
+
+def test_resolve_whatsapp_contact_exact_match():
+    """Exact case-insensitive match should win even when other candidates exist."""
+    candidates = ["Aarti", "Aarti School", "Aarti Sharma"]
+    res = whatsapp_agent.resolve_whatsapp_contact(candidates, "Aarti School")
+    assert res == "Aarti School"
+
+    res_ci = whatsapp_agent.resolve_whatsapp_contact(candidates, "aarti school")
+    assert res_ci == "Aarti School"
 
 
+def test_resolve_whatsapp_contact_single_prefix_match():
+    """Single candidate matching prefix or substring should be resolved."""
+    candidates = ["Aarti School", "Rohan Mehta"]
+    res = whatsapp_agent.resolve_whatsapp_contact(candidates, "Aarti")
+    assert res == "Aarti School"
 
 
+def test_resolve_whatsapp_contact_multiple_ambiguous_returns_none():
+    """If multiple candidates match and none is exact, should return None to avoid guessing."""
+    candidates = ["Aarti School", "Aarti Home", "Aarti Office"]
+    res = whatsapp_agent.resolve_whatsapp_contact(candidates, "Aarti")
+    assert res is None
+
+
+def test_send_whatsapp_message_ui_dismisses_modal_dialog(monkeypatch):
+    """Verifies that an existing modal dialog ('Send message to') is dismissed before searching."""
+    mock_page = MagicMock()
+    mock_dialog = MagicMock()
+    mock_close_btn = MagicMock()
+    mock_search = MagicMock()
+    mock_msg_input = MagicMock()
+    mock_header = MagicMock()
+    mock_header_title = MagicMock()
+    mock_header_title.get_attribute.return_value = "Aarti School"
+    mock_header.query_selector.return_value = mock_header_title
+
+    escapes_pressed = []
+
+    def mock_query(selector):
+        if 'div[role="dialog"]' in selector:
+            return mock_dialog
+        if 'button[aria-label*="Back"' in selector or 'button[aria-label*="Close"' in selector:
+            return mock_close_btn
+        if 'header' in selector:
+            return mock_header
+        if 'footer' in selector:
+            return mock_msg_input
+        if 'contenteditable' in selector or 'Search' in selector:
+            return mock_search
+        return None
+
+    mock_page.query_selector.side_effect = mock_query
+    mock_page.query_selector_all.return_value = []
+    mock_page.keyboard.press.side_effect = lambda k: escapes_pressed.append(k)
+
+    # Fast-forward sleep in tests
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+
+    res = whatsapp_agent.send_whatsapp_message_ui("Aarti School", "Hello", _page=mock_page)
+
+    assert "Escape" in escapes_pressed
+    assert res["success"] is True
+    assert res["contact_name"] == "Aarti School"
+    assert res.get("verification") == "outgoing_message_detected"
+
+
+def test_send_whatsapp_message_ui_header_mismatch_aborts(monkeypatch):
+    """Verifies that if WhatsApp opened the wrong chat header, message sending is aborted."""
+    mock_page = MagicMock()
+    mock_search = MagicMock()
+    mock_header = MagicMock()
+    mock_header_title = MagicMock()
+    mock_header_title.get_attribute.return_value = "Random Group"
+    mock_header.query_selector.return_value = mock_header_title
+
+    def mock_query(selector):
+        if 'header' in selector:
+            return mock_header
+        if 'contenteditable' in selector or 'Search' in selector:
+            return mock_search
+        return None
+
+    mock_page.query_selector.side_effect = mock_query
+    mock_page.query_selector_all.return_value = []
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+
+    res = whatsapp_agent.send_whatsapp_message_ui("Aarti School", "Hello", _page=mock_page)
+
+    assert res["success"] is False
+    assert "mismatch" in res["error"].lower()
+    assert "Random Group" in res["error"]
+
+
+def test_send_whatsapp_message_mobile(monkeypatch):
+    """Verifies that is_mobile=True routes to whatsapp:// native mobile deep link."""
+    opened_urls = []
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened_urls.append(url) or True)
+
+    res = actions.send_whatsapp_message(phone_number="919876543210", message="Hello mobile", is_mobile=True)
+    assert res["success"] is True
+    assert len(opened_urls) == 1
+    assert opened_urls[0].startswith("whatsapp://send")
+    assert "phone=919876543210" in opened_urls[0]
+    assert "text=Hello%20mobile" in opened_urls[0]
+
+
+def test_send_whatsapp_message_desktop(monkeypatch):
+    """Verifies that is_mobile=False routes to WhatsApp Web, sleeps, and triggers enter key."""
+    opened_urls = []
+    sleeps = []
+    pressed_keys = []
+
+    import webbrowser
+    import time
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened_urls.append(url) or True)
+    monkeypatch.setattr(time, "sleep", lambda s: sleeps.append(s))
+    
+    try:
+        import pyautogui
+        monkeypatch.setattr(pyautogui, "press", lambda k: pressed_keys.append(k))
+    except Exception:
+        pass
+
+    res = actions.send_whatsapp_message(phone_number="919876543210", message="Hello desktop", is_mobile=False)
+    assert res["success"] is True
+    assert len(opened_urls) == 1
+    assert opened_urls[0].startswith("https://web.whatsapp.com/send")
+    assert "phone=919876543210" in opened_urls[0]
+    assert "text=Hello%20desktop" in opened_urls[0]
+    assert len(sleeps) >= 1
+    if pressed_keys:
+        assert pressed_keys[0] == "enter"

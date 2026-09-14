@@ -14,6 +14,7 @@ credentials.json
 token_google.enc
 token.json
 *.enc
+*.pem
 .whatsapp_profile/
 whatsapp_audit.log
 instagram_profile/
