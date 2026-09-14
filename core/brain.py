@@ -1688,8 +1688,6 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             res = actions.search_web_for_answer(q_srch)
             if res.get("success"):
                 summary_text = res.get("results", "")
-                return {"reply": f"Web search results:\n{summary_text[:400]}", "action": res}
-            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": res}
                 return {"reply": _format_search_reply(user_text, summary_text), "action": res}
             return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": None}
 
@@ -1704,8 +1702,6 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             res = actions.search_web_for_answer(q_srch)
             if res.get("success"):
                 summary_text = res.get("results", "")
-                return {"reply": f"Web search results:\n{summary_text[:400]}", "action": res}
-            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": res}
                 return {"reply": _format_search_reply(user_text, summary_text), "action": res}
             return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": None}
 
