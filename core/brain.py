@@ -1521,22 +1521,33 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         or ("play" in text and any(kw in text for kw in ["song", "songs", "playlist", "track", "music", "lofi", "relax"]) and not is_yt and not is_video)
     )
     if is_music_intent:
-        q_spotify = text
+        clean_text = text.strip()
+        open_only = bool(re.search(r'^(?:open|launch|kholo|start)\s+(?:web\s+)?spotify(?:\s+web)?$', clean_text, re.I)) or clean_text.lower() in ["spotify", "web spotify", "spotify web"]
+        if open_only:
+            res = actions.open_website("spotify") if "web" in clean_text.lower() else actions.play_spotify_music("", prefer_web=False)
+            return {"reply": "I have opened Spotify for you.", "action": res}
+
+        q_spotify = clean_text
         for noise in [
-            "open spotify and play", "open spotify", "launch spotify", "kholo spotify",
-            "spotify pe", "spotify par", "on spotify", "in spotify", "spotify",
-            "and play", "aur chalao", "play", "chalao", "bajao", "suno", "sunao"
+            "open web spotify and play", "open spotify and play", "open web spotify", "open spotify", "launch spotify", "kholo spotify",
+            "spotify pe", "spotify par", "on spotify", "in spotify", "web spotify", "spotify web", "spotify",
+            "and play", "aur chalao", "play", "chalao", "bajao", "suno", "sunao", "web"
         ]:
             q_spotify = re.sub(rf'\b{noise}\b', '', q_spotify, flags=re.I).strip()
         q_spotify = re.sub(r'^(?:a\s+)?(?:song|songs|video|music)\b', '', q_spotify, flags=re.I).strip()
         q_spotify = re.sub(r'\b(?:karo|do|kar do|please|yaar)\b', '', q_spotify, flags=re.I).strip()
         q_spotify = re.sub(r'\s+', ' ', q_spotify).strip()
 
+        if not q_spotify or q_spotify.lower() in ["open", "play", "music", "song", "web"]:
+            q_spotify = ""
+
         if executor_bridge.is_connected():
-            res = dispatch_pc_tool_sync("play_spotify_music", {"query": q_spotify})
+            res = dispatch_pc_tool_sync("play_spotify_music", {"query": q_spotify, "prefer_web": "web" in clean_text.lower()})
         else:
-            res = actions.play_spotify_music(q_spotify)
-        return {"reply": res.get("message", "Spotify par play kar diya hai."), "action": res}
+            if "web" in clean_text.lower():
+                res = actions.play_spotify_music(q_spotify, prefer_web=True)
+            else:
+                res = actions.play_spotify_music(q_spotify)
         return {"reply": res.get("message", "Playing on Spotify."), "action": res}
 
     # 9. Dev Environment
@@ -1544,13 +1555,11 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         res = dispatch_pc_tool_sync("start_dev_environment", {})
         if res.get("offline"):
             return {
-                "reply": "Kshama karein, laptop executor offline hai: Dev environment start nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
                 "reply": "Sorry, laptop executor is offline: Could not start dev environment.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
-                "reply": "Kshama karein, laptop executor timed out: Dev environment start nahi ho saka.",
                 "reply": "Sorry, laptop executor timed out: Could not start dev environment.",
                 "action": res
             }

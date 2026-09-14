@@ -57,13 +57,17 @@ function setConversationActive(active = true) {
 }
 
 function scrollChatToBottom(smooth = true) {
-    if (!transcriptHistoryContainer) return;
+    const thread = document.getElementById('chat-thread') || transcriptHistoryContainer;
+    if (!thread) return;
     requestAnimationFrame(() => {
-        transcriptHistoryContainer.scrollTo({
-            top: transcriptHistoryContainer.scrollHeight,
+        thread.scrollTo({
+            top: thread.scrollHeight,
             behavior: smooth ? 'smooth' : 'auto'
         });
-        transcriptHistoryContainer.scrollTop = transcriptHistoryContainer.scrollHeight;
+        thread.scrollTop = thread.scrollHeight;
+        if (transcriptHistoryContainer && transcriptHistoryContainer !== thread) {
+            transcriptHistoryContainer.scrollTop = transcriptHistoryContainer.scrollHeight;
+        }
         if (chatMessages && chatMessages.lastElementChild) {
             chatMessages.lastElementChild.scrollIntoView({
                 behavior: smooth ? 'smooth' : 'auto',
@@ -914,7 +918,6 @@ function appendChatMessage(role, text) {
     const now = new Date();
     time.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    header.appendChild(sender);
     header.appendChild(senderGroup);
     header.appendChild(time);
 
@@ -1416,7 +1419,6 @@ async function sendVoiceUpload(audioBlob, mimeType, existingRequestId = null) {
         console.error("[Astra] Voice upload error:", err);
         const isTimeout = didTimeout || (controller.signal.aborted && controller.signal.reason === 'timeout') || err.name === 'AbortError';
         const userNotice = isTimeout
-            ? "Voice upload timeout ho gaya. Kripya dobara bolein."
             ? "Voice upload timed out. Please try speaking again."
             : "Voice processing failed. Please try again.";
 
@@ -1672,7 +1674,6 @@ function createStreamingAssistantBubble() {
     const now = new Date();
     time.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    header.appendChild(sender);
     header.appendChild(senderGroup);
     header.appendChild(time);
 
@@ -2074,8 +2075,6 @@ async function sendVoiceCommand(commandText) {
         console.error("[Astra] Backend communication error:", error);
         const isTimeout = didTimeout || (controller.signal.aborted && controller.signal.reason === 'timeout') || error.name === 'AbortError';
         const userNotice = isTimeout
-            ? "Command timeout ho gaya. Kripya dobara bolein."
-            : "Connection error. Kripya dobara koshish karein.";
             ? "Command timed out. Please speak again."
             : "Connection error. Please try again.";
 
@@ -3219,3 +3218,21 @@ window.addEventListener('DOMContentLoaded', async () => {
         scheduleWakeWordRestart(800);
     }
 });
+
+// Mobile Virtual Keyboard & Viewport Resizing Handler (visualViewport API)
+if (window.visualViewport) {
+    const handleViewportResize = () => {
+        const interactionZone = document.querySelector('.interaction-zone');
+        if (!interactionZone) return;
+        const vp = window.visualViewport;
+        const offset = window.innerHeight - vp.height - vp.offsetTop;
+        if (offset > 45) {
+            interactionZone.style.transform = `translateY(-${Math.max(0, offset)}px)`;
+            scrollChatToBottom(false);
+        } else {
+            interactionZone.style.transform = '';
+        }
+    };
+    window.visualViewport.addEventListener('resize', handleViewportResize);
+    window.visualViewport.addEventListener('scroll', handleViewportResize);
+}

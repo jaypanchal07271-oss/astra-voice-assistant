@@ -14,7 +14,7 @@
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
 
-    <link rel="stylesheet" href="/static/style.css?v=2.7">
+    <link rel="stylesheet" href="/static/style.css?v=3.1">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -189,12 +189,6 @@
 
                 <!-- Unique 3D Gyroscopic Celestial Plasma AI Orb -->
                 <div class="orb-stage-wrapper" id="orbStageWrapper">
-                    <!-- Real-time Voice Lifecycle Status Bar -->
-                    <div class="status-container" role="status" aria-live="polite">
-                        <span class="status-dot" id="statusDot" aria-hidden="true"></span>
-                        <span id="statusText" class="status-text">Tap to speak</span>
-                    </div>
-
                     <div class="orb-visualizer-container">
                         <!-- Left Soundwave Wing -->
                         <div class="soundwave-wing left-wing" aria-hidden="true">
@@ -237,6 +231,12 @@
                             <span class="wave-bar"></span>
                         </div>
                     </div>
+
+                    <!-- Real-time Voice Lifecycle Status Bar (Positioned below the orb) -->
+                    <div class="status-container" id="statusContainer" role="status" aria-live="polite">
+                        <span class="status-dot" id="statusDot" aria-hidden="true"></span>
+                        <span id="statusText" class="status-text">Tap to speak</span>
+                    </div>
                 </div>
 
                 <!-- Responsive Prompt Suggestion Deck (2x2 on Mobile, 4x1 on Laptop - Never Clips!) -->
@@ -274,9 +274,11 @@
                     </div>
                 </div>
 
-                <!-- Conversation History Console -->
+                <!-- Conversation History Console / Single Scrollable Chat Thread -->
                 <div class="transcript-history-container" id="transcriptHistoryContainer" role="log" aria-label="Conversation Messages">
-                    <div class="chat-messages" id="chatMessages">
+                    <div class="chat-thread" id="chat-thread">
+                        <div class="chat-messages" id="chatMessages">
+                        </div>
                     </div>
                     
                     <!-- Live Interim Speech Transcript Stream -->
@@ -531,6 +533,6 @@
     <!-- Hidden Audio Player -->
     <audio id="audioPlayer" preload="auto"></audio>
 
-    <script src="/static/app.js?v=2.7"></script>
+    <script src="/static/app.js?v=3.1"></script>
 </body>
 </html>

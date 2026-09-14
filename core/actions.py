@@ -234,10 +234,21 @@ def open_app(app_name: str) -> Dict[str, Any]:
                         res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
                         _record_idempotency("open_app", safe_name, res)
                         return res
-                subprocess.Popen(["cmd.exe", "/c", "code"], shell=False)
-                res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
-                _record_idempotency("open_app", safe_name, res)
-                return res
+                for pf in ["ProgramFiles", "ProgramFiles(x86)"]:
+                    pdir = os.getenv(pf, "")
+                    if pdir:
+                        code_pf = Path(pdir) / "Microsoft VS Code" / "Code.exe"
+                        if code_pf.exists():
+                            subprocess.Popen([str(code_pf)], shell=False)
+                            res = {"success": True, "action": "open_app", "app": app_name, "message": app_msg}
+                            _record_idempotency("open_app", safe_name, res)
+                            return res
+                return {
+                    "success": False,
+                    "action": "open_app",
+                    "app": app_name,
+                    "message": f"Could not find '{app_name}' on your system."
+                }
 
             # 1e. Try Windows Shell execution (resolves Registry App Paths & System PATH)
             try:
@@ -470,11 +481,11 @@ def open_website(website: str, search_query: str = "") -> Dict[str, Any]:
             direct_url = fetch_youtube_first_video_url(clean_query)
             url = direct_url if direct_url else f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(clean_query)}"
             _launch_browser_url(url)
-            res = {"success": True, "action": "open_website", "url": url, "message": f"YouTube par '{clean_query}' open kar diya hai."}
+            res = {"success": True, "action": "open_website", "url": url, "message": f"Opened YouTube and searched for '{clean_query}'."}
         else:
             url = "https://www.youtube.com"
             _launch_browser_url(url)
-            res = {"success": True, "action": "open_website", "url": url, "message": "YouTube open kar diya hai."}
+            res = {"success": True, "action": "open_website", "url": url, "message": "Opened YouTube."}
         _record_idempotency("open_website", target_key, res)
         return res
 
@@ -484,7 +495,7 @@ def open_website(website: str, search_query: str = "") -> Dict[str, Any]:
             return search_instagram_user(clean_query)
         url = "https://www.instagram.com"
         _launch_browser_url(url)
-        res = {"success": True, "action": "open_website", "url": url, "website": "instagram", "message": "Instagram open kar diya hai."}
+        res = {"success": True, "action": "open_website", "url": url, "website": "instagram", "message": "Opened Instagram."}
         _record_idempotency("open_website", target_key, res)
         return res
 
@@ -496,7 +507,7 @@ def open_website(website: str, search_query: str = "") -> Dict[str, Any]:
     for key, base_url in COMMON_SITES.items():
         if key in clean_site:
             _launch_browser_url(base_url)
-            res = {"success": True, "action": "open_website", "url": base_url, "website": key, "message": f"{key.capitalize()} open kar diya hai."}
+            res = {"success": True, "action": "open_website", "url": base_url, "website": key, "message": f"Opened {key.capitalize()}."}
             _record_idempotency("open_website", target_key, res)
             return res
 
@@ -637,6 +648,8 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
 
     is_generic = not clean_query or clean_query.lower() in ["music", "song", "songs"]
 
+    item_type = "playlist" if is_playlist else "song"
+
     if is_generic:
         # User simply requested to play music or resume Spotify
         if force_web:
@@ -651,7 +664,7 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             return {
                 "success": True,
                 "action": "play_spotify_music",
-                "message": "Spotify Web par music play kar diya hai."
+                "message": "Opened Spotify Web and playing music."
             }
 
         try:
@@ -670,7 +683,7 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
         return {
             "success": True,
             "action": "play_spotify_music",
-            "message": "Spotify par music play kar diya hai."
+            "message": "Opened Spotify and playing music."
         }
 
     # Specific song, artist, genre, or playlist requested
@@ -688,8 +701,6 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
         except Exception as pe:
             logger.debug(f"Spotify play key simulation: {pe}")
 
-    item_type = "playlist" if is_playlist else "gaana"
-
     if force_web:
         _launch_browser_url(web_url)
         def _trigger_web_play():
@@ -705,7 +716,7 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             "query": clean_query,
             "uri": spotify_uri,
             "web_url": web_url,
-            "message": f"Spotify Web par '{clean_query}' {item_type} search karke play kar diya hai."
+            "message": f"Opened Spotify Web and playing '{clean_query}'."
         }
 
     try:
@@ -717,7 +728,7 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             "query": clean_query,
             "uri": spotify_uri,
             "web_url": web_url,
-            "message": f"Spotify par '{clean_query}' {item_type} search karke play kar diya hai."
+            "message": f"Opened Spotify and playing '{clean_query}'."
         }
     except Exception:
         _launch_browser_url(web_url)
@@ -734,7 +745,7 @@ def play_spotify_music(query: str = "", prefer_web: bool = False) -> Dict[str, A
             "query": clean_query,
             "uri": spotify_uri,
             "web_url": web_url,
-            "message": f"Spotify Web par '{clean_query}' open karke play kar diya hai."
+            "message": f"Opened Spotify Web and playing '{clean_query}'."
         }
 
 

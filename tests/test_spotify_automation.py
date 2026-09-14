@@ -47,7 +47,7 @@ def test_play_spotify_music_generic_resume():
         # Generic "music"
         res = actions.play_spotify_music("play music")
         assert res["success"] is True
-        assert "Spotify par music play kar diya hai" in res["message"]
+        assert "spotify" in res["message"].lower() and "music" in res["message"].lower()
         mock_startfile.assert_called_once_with("spotify:")
         mock_thread.assert_called_once()
 

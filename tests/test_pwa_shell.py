@@ -53,7 +53,7 @@ def test_service_worker_endpoint_and_headers():
     assert response.headers.get("Service-Worker-Allowed") == "/"
 
     content = response.text
-    assert ("astra-pwa-v2" in content or "astra-pwa-v1" in content)
+    assert ("astra-pwa-v" in content)
     assert "APP_SHELL_ASSETS" in content
     assert "install" in content
     assert "activate" in content

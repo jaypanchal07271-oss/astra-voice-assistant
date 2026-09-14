@@ -3,8 +3,8 @@
  * Provides offline caching for the application shell, assets, and graceful network fallbacks.
  */
 
-// Upgraded from astra-pwa-v2 to astra-pwa-v7 for cache invalidation
-const CACHE_NAME = 'astra-pwa-v7';
+// Upgraded from astra-pwa-v2 to astra-pwa-v9 for chat thread UX and responsive mobile redesign cache invalidation
+const CACHE_NAME = 'astra-pwa-v9';
 
 const APP_SHELL_ASSETS = [
   '/',
