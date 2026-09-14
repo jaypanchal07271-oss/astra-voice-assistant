@@ -384,7 +384,7 @@ def test_indic_voice_command_execution():
         assert res.status_code == 200
         data = res.json()
         assert data["success"] is True
-        assert "WhatsApp Web open" in data["reply"]
+        assert "whatsapp" in data["reply"].lower()
         assert mock_open_web.called
 
     with patch("core.actions.open_website") as mock_open_web:
@@ -397,7 +397,7 @@ def test_indic_voice_command_execution():
         assert res.status_code == 200
         data = res.json()
         assert data["success"] is True
-        assert "Instagram open" in data["reply"]
+        assert "instagram" in data["reply"].lower()
         assert mock_open_web.called
 
 

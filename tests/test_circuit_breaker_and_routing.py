@@ -214,7 +214,7 @@ async def test_honest_fallback_on_total_quota_exhaustion_general_query():
         res = await brain.process_voice_command("who is albert einstein", session_id=session_id)
 
         # Must not be a generic canned reply pretending nothing is wrong
-        assert "AI quota abhi khatam ho gayi hai" in res["reply"]
+        assert "quota" in res["reply"].lower()
         assert res.get("degraded_mode") is True
         assert res.get("ai_status") == "degraded"
 

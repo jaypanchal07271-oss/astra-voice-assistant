@@ -73,7 +73,7 @@ def test_api_chat_llm_timeout_handled_safely(client, monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
-    assert "samay lag gaya" in data["reply"]
+    assert "too long to process" in data["reply"].lower() or "samay lag gaya" in data["reply"]
     assert "who are you" not in data["reply"].lower()
     assert data["action"]["status"] == "timeout"
 
@@ -164,7 +164,7 @@ def test_voice_upload_llm_timeout_handled_safely(client, monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
-    assert "samay lag gaya" in data["reply"]
+    assert "too long to process" in data["reply"].lower() or "samay lag gaya" in data["reply"]
 
 
 def test_voice_upload_tts_timeout_preserves_text_and_flags(client, monkeypatch):

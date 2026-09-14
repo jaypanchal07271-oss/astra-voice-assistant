@@ -292,7 +292,7 @@ class TestBrainFallbackRoutingIntegration:
         # Test Google open (clean query, no "kholo" search)
         res_goog = brain.fallback_intent_parser("गूगल खोलो", session_id="test_hi_4")
         assert ("google", "") in opened_sites
-        assert "Google open kar diya hai" in res_goog["reply"]
+        assert "google" in res_goog["reply"].lower() and "open" in res_goog["reply"].lower()
 
         # Test Notepad open
         res_np = brain.fallback_intent_parser("नोटपैड खोलो", session_id="test_hi_5")

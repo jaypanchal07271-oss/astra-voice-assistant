@@ -208,8 +208,10 @@ Human-Like Reasoning & Problem-Solving Protocol (Mandatory):
 1. UNDERSTAND FIRST: Read the request fully. If ambiguous, pick the most reasonable interpretation and execute it directly. Only ask a clarifying question if answering wrong would waste real effort. Never answer a different question than asked.
 2. THINK BEFORE SPEAKING: Break problems down silently: known -> what is asked -> steps -> cleanest answer. Never dump raw chain-of-thought, scratch work, or "let me think..." filler into spoken/chat replies. Deliver the final crisp answer like a sharp human expert who already thought it through.
 3. HONESTY OVER CONFIDENCE-THEATER: If unsure, say so plainly ("Pakka nahi pata, but yeh possibility hai...") instead of guessing. If a fact might have changed or needs current data, use search_web_for_answer. Never fabricate numbers, names, sources, or command outputs.
+3. HONESTY OVER CONFIDENCE-THEATER: If unsure, say so plainly ("I am not entirely sure, but here is a likely possibility...") instead of guessing. If a fact might have changed or needs current data, use search_web_for_answer. Never fabricate numbers, names, sources, or command outputs.
 4. ANSWER LIKE A SHARP HUMAN, NOT A MANUAL: Simple question -> 1-2 line direct answer. Complex/technical question -> structured but concise explanation. Use analogies/examples when helpful. Skip disclaimers, filler, and corporate hedging ("As an AI...", "It depends...").
 5. CONTEXT & MEMORY AWARENESS: Track earlier turns in the session. Resolve pronouns ("isko", "wahi wala", "usme") using recent context before asking for clarification. Accept corrections naturally without over-apologizing.
+5. CONTEXT & MEMORY AWARENESS: Track earlier turns in the session. Resolve pronouns ("this", "that one", "in it") using recent context before asking for clarification. Accept corrections naturally without over-apologizing.
 6. DECISION-MAKING UNDER AMBIGUITY: Default to the interpretation that gets the user their actual answer fastest. When genuinely stuck between two valid paths, briefly state the assumption rather than stalling.
 7. EMOTIONAL CALIBRATION: Casual chat -> casual, witty reply. Serious/urgent/technical -> drop the wit, be precise and fast. Never joke or be sarcastic when the user is frustrated, worried, or discussing sensitive topics (health, money, errors).
 8. SELF-CORRECTION: If you realize mid-answer that your first instinct was wrong or incomplete, correct it immediately in the same response.
@@ -218,14 +220,22 @@ CRITICAL EXECUTION RULES (MANDATORY):
 1. NEVER describe what a tool does. EXECUTE IT. If the user says "news batao", do NOT say "You can check News24" or "Main search kar sakta hoon". Call the tool immediately and read its output.
 2. SEARCH QUERIES: When the user asks for news, weather, facts, or any real-time information, you MUST call 'search_web_for_answer' with a specific English query. Then READ the returned text and summarize the top 3 results in the user's language.
 3. NO EMPTY CONFIRMATIONS: Never respond with just "Ready hoon" or "Bataiye kya karna hai" when the user has already given a clear command. If the user says "Notepad kholo", open it. Do not ask "Kya main khol doon?"
+1. NEVER describe what a tool does. EXECUTE IT. If the user says "give me the news" or "news batao", do NOT say "You can check News24" or "I can search for you". Call the tool immediately and read its output.
+2. SEARCH QUERIES: When the user asks for news, weather, facts, or any real-time information, you MUST call 'search_web_for_answer' with a specific English query. Then READ the returned text and summarize the top 3 results in clear English.
+3. NO EMPTY CONFIRMATIONS: Never respond with just "I am ready" or "Tell me what to do" when the user has already given a clear command. If the user says "Open Notepad", open it. Do not ask "Shall I open it?"
 4. TOOL OUTPUT HANDLING: After calling a tool, you will receive its output as text. You MUST incorporate that real data into your final spoken reply. Never ignore tool output. Never fabricate data that was not in the tool output.
 5. ERROR RESPONSES: If a tool fails or returns empty results, say exactly what happened in natural Hinglish. Example: "Arre yaar, search result nahi mila, internet check kar lo." Do NOT fall back to generic advice.
+5. ERROR RESPONSES: If a tool fails or returns empty results, say exactly what happened in clear, natural English. Example: "Sorry, no search results were found. Please check your internet connection." Do NOT fall back to generic advice.
 6. RESPONSE FORMAT FOR NEWS/SEARCH:
    - User asks: "Aaj ki news kya hai?"
    - You call: search_web_for_answer(query="latest news India today")
+   - User asks: "What are the top tech headlines today?"
+   - You call: search_web_for_answer(query="latest technology news headlines today")
    - You receive: "1. Headline A: description... 2. Headline B: description..."
    - You speak: "Aaj ki top 3 khabrein: 1. [Real Headline A], 2. [Real Headline B], 3. [Real Headline C]."
    - NEVER say: "Aap News24 ya Google News par dekh sakte hain."
+   - You speak: "Here are today's top 3 headlines: 1. [Real Headline A], 2. [Real Headline B], 3. [Real Headline C]."
+   - NEVER say: "You can check News24 or Google News."
 7. TONE ADAPTATION:
    - Casual greeting -> warm, confident, 1 sentence.
    - Serious/technical/urgent request -> drop the wit, be precise and fast.
@@ -382,6 +392,7 @@ def dispatch_action_safe(tool_name: str, params: Optional[Dict[str, Any]] = None
         "success": False,
         "status": "error",
         "message": "Laptop executor offline hai. Kripya apne laptop par local_executor.py start karein.",
+        "message": "Laptop executor is offline. Please start local_executor.py on your laptop.",
         "offline": True
     }
 
@@ -549,6 +560,7 @@ def get_instagram_unread(max_chats: int = 5) -> str:
     res = actions.get_instagram_unread(max_chats)
     if res.get("status") == "manual_action_required":
         return "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein."
+        return "Manual login or security verification is required on Instagram. Please check the browser window."
     return res.get("message", "Checked Instagram DMs.")
 
 def send_instagram_dm(username: str = "", message: str = "") -> str:
@@ -562,6 +574,7 @@ def send_instagram_dm(username: str = "", message: str = "") -> str:
         res = actions.send_instagram_dm(username=clean_user, message=clean_msg)
     if res.get("status") == "manual_action_required":
         return "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein."
+        return "Manual login or security verification is required on Instagram. Please check the browser window."
     return res.get("message", f"Instagram DM to {clean_user} processed.")
 
 def get_instagram_messages(max_chats: int = 5) -> str:
@@ -1195,6 +1208,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
     """
     if not user_text or not isinstance(user_text, str) or not user_text.strip():
         return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+        return {"reply": "I could not hear your voice clearly. Please speak again.", "action": None}
 
     user_text_norm = transliterate_indic_command(user_text)
     text = user_text_norm.lower().strip()
@@ -1215,6 +1229,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             session_manager.clear_pending_whatsapp(session_id)
             return {
                 "reply": f"WhatsApp message to '{pending_whatsapp}' cancel kar diya gaya hai.",
+                "reply": f"Cancelled sending WhatsApp message to '{pending_whatsapp}'.",
                 "action": {"status": "cancelled", "contact_name": pending_whatsapp}
             }
 
@@ -1227,6 +1242,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             res = actions.send_whatsapp_message(contact_name=pending_whatsapp, message=user_text)
             return {
                 "reply": f"WhatsApp par '{pending_whatsapp}' ko message bhej diya gaya hai: '{user_text}'.",
+                "reply": f"Sent WhatsApp message to '{pending_whatsapp}': '{user_text}'.",
                 "action": res
             }
 
@@ -1243,18 +1259,23 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             if res.get("status") == "manual_action_required":
                 return {
                     "reply": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein.",
+                    "reply": "Instagram requires manual login or security verification. Please check your browser window.",
                     "action": res
                 }
             elif not res.get("success"):
                 err_msg = res.get("message") or res.get("error") or "Message deliver nahi ho saka."
                 return {"reply": f"Kshama karein, Instagram par '{pending_instagram}' ko message nahi bheja ja saka: {err_msg}", "action": res}
+                err_msg = res.get("message") or res.get("error") or "Message could not be delivered."
+                return {"reply": f"Sorry, could not send Instagram message to '{pending_instagram}': {err_msg}", "action": res}
             return {
                 "reply": f"Instagram par '{pending_instagram}' ko message bhej diya gaya hai: '{user_text}'.",
+                "reply": f"Sent Instagram message to '{pending_instagram}': '{user_text}'.",
                 "action": res
             }
         else:
             return {
                 "reply": f"Instagram message to '{pending_instagram}' cancel kar diya gaya hai.",
+                "reply": f"Cancelled sending Instagram message to '{pending_instagram}'.",
                 "action": {"status": "cancelled", "contact_name": pending_instagram}
             }
 
@@ -1366,14 +1387,17 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         if res.get("offline"):
             return {
                 "reply": "Kshama karein, laptop executor offline hai: Screen analyze nahi ho saki. Kripya apne laptop par local_executor.py start karein.",
+                "reply": "Sorry, laptop executor is offline: Could not analyze screen.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
                 "reply": "Kshama karein, laptop executor timed out: Screen capture nahi ho saki.",
+                "reply": "Sorry, laptop executor timed out: Could not analyze screen.",
                 "action": res
             }
         return {"reply": res.get("message", "Screen analyzed"), "action": res}
+        return {"reply": res.get("message", "Screen analyzed successfully."), "action": res}
 
     # 2. Reminder / Timer
     if any(k in text for k in ["remind", "reminder", "yaad dilana", "timer", "alarm"]):
@@ -1412,14 +1436,17 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             if res.get("offline"):
                 return {
                     "reply": f"Kshama karein, laptop executor offline hai: '{last_act.capitalize()}' band nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                    "reply": f"Sorry, laptop executor is offline: Could not close '{last_act.capitalize()}'.",
                     "action": res
                 }
             elif res.get("timeout"):
                 return {
                     "reply": f"Kshama karein, laptop executor timed out: '{last_act.capitalize()}' band nahi ho saka.",
+                    "reply": f"Sorry, laptop executor timed out: Could not close '{last_act.capitalize()}'.",
                     "action": res
                 }
             return {"reply": f"{last_act.capitalize()} band kar diya hai.", "action": res}
+            return {"reply": f"Closed {last_act.capitalize()} for you.", "action": res}
 
     # 5. Time / Date
     if re.search(r'\b(time|samay|baje|date|tareekh|din|aaj)\b', text) and not any(k in text for k in ["search", "dhoondo", "release date", "expiry", "birth"]):
@@ -1432,14 +1459,17 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         if res.get("offline"):
             return {
                 "reply": "Kshama karein, laptop executor offline hai: Clipboard read nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                "reply": "Sorry, laptop executor is offline: Could not read clipboard.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
                 "reply": "Kshama karein, laptop executor timed out: Clipboard read nahi ho saka.",
+                "reply": "Sorry, laptop executor timed out: Could not read clipboard.",
                 "action": res
             }
         return {"reply": res.get("message", "Clipboard analyzed"), "action": res}
+        return {"reply": res.get("message", "Clipboard analyzed successfully."), "action": res}
 
     # 7. YouTube & Video Playback (supports 'youtube', 'yt', 'video', 'open yt and play ...')
     is_yt = bool(re.search(r'\b(?:youtube|yt)\b', text))
@@ -1455,6 +1485,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             else:
                 res = actions.open_website("youtube")
             return {"reply": "YouTube open kar diya hai.", "action": res}
+            return {"reply": "Opened YouTube for you.", "action": res}
 
         # Extract target search topic
         q = text
@@ -1470,12 +1501,14 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             else:
                 res = actions.play_youtube_video(q)
             return {"reply": f"YouTube par '{q}' chala diya hai.", "action": res}
+            return {"reply": f"Playing '{q}' on YouTube for you.", "action": res}
         else:
             if executor_bridge.is_connected():
                 res = dispatch_pc_tool_sync("open_website", {"website": "youtube"})
             else:
                 res = actions.open_website("youtube")
             return {"reply": "YouTube open kar diya hai.", "action": res}
+            return {"reply": "Opened YouTube for you.", "action": res}
 
     # 8. Spotify & Music/Playlist Playback
     is_music_intent = (
@@ -1504,6 +1537,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         else:
             res = actions.play_spotify_music(q_spotify)
         return {"reply": res.get("message", "Spotify par play kar diya hai."), "action": res}
+        return {"reply": res.get("message", "Playing on Spotify."), "action": res}
 
     # 9. Dev Environment
     if any(k in text for k in ["dev environment", "npm run dev", "start dev", "project start", "dev start"]):
@@ -1511,39 +1545,48 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         if res.get("offline"):
             return {
                 "reply": "Kshama karein, laptop executor offline hai: Dev environment start nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                "reply": "Sorry, laptop executor is offline: Could not start dev environment.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
                 "reply": "Kshama karein, laptop executor timed out: Dev environment start nahi ho saka.",
+                "reply": "Sorry, laptop executor timed out: Could not start dev environment.",
                 "action": res
             }
         return {"reply": res.get("message", "Dev environment started"), "action": res}
+        return {"reply": res.get("message", "Dev environment started successfully."), "action": res}
 
     # 10. Volume Control
     if "volume" in text or "aawaz" in text:
         action_cmd = None
         reply_msg = "Volume change kar diya hai."
+        reply_msg = "Volume adjusted."
         if any(k in text for k in ["up", "badhao", "badha", "high", "plus", "zyada", "increase"]):
             action_cmd = "volume_up"
             reply_msg = "Volume badha diya hai."
+            reply_msg = "Volume increased."
         elif any(k in text for k in ["down", "kam", "low", "minus", "ghata", "decrease"]):
             action_cmd = "volume_down"
             reply_msg = "Volume kam kar diya hai."
+            reply_msg = "Volume decreased."
         elif any(k in text for k in ["mute", "unmute", "band"]):
             action_cmd = "volume_mute"
             reply_msg = "Audio mute/unmute kar diya hai."
+            reply_msg = "Audio muted or unmuted."
 
         if action_cmd:
             res = dispatch_pc_tool_sync("system_control", {"command": action_cmd})
             if res.get("offline"):
                 return {
                     "reply": "Kshama karein, laptop executor offline hai: Volume control nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                    "reply": "Sorry, laptop executor is offline: Could not adjust volume.",
                     "action": res
                 }
             elif res.get("timeout"):
                 return {
                     "reply": "Kshama karein, laptop executor timed out: Volume control nahi ho saka.",
+                    "reply": "Sorry, laptop executor timed out: Could not adjust volume.",
                     "action": res
                 }
             return {"reply": reply_msg, "action": res}
@@ -1554,14 +1597,17 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         if res.get("offline"):
             return {
                 "reply": "Kshama karein, laptop executor offline hai: Screenshot nahi liya ja saka. Kripya apne laptop par local_executor.py start karein.",
+                "reply": "Sorry, laptop executor is offline: Could not capture screenshot.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
                 "reply": "Kshama karein, laptop executor timed out: Screenshot capture nahi ho saka.",
+                "reply": "Sorry, laptop executor timed out: Could not capture screenshot.",
                 "action": res
             }
         return {"reply": res.get("message", "Screenshot captured"), "action": res}
+        return {"reply": res.get("message", "Screenshot captured successfully."), "action": res}
 
     # 12. Lock PC
     if "lock" in text and ("pc" in text or "laptop" in text or "screen" in text or "karo" in text):
@@ -1638,6 +1684,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             else:
                 res = actions.search_instagram_user(query=target_srch)
             return {"reply": res.get("message", f"Instagram par '{target_srch}' search kar diya hai."), "action": res}
+            return {"reply": res.get("message", f"Searching Instagram for '{target_srch}'."), "action": res}
 
         # 13b.1 Check Unread DMs
         if any(k in text for k in ["unread", "kiska", "check", "dekho", "aaya", "padho", "read", "naye"]) and any(k in text for k in ["message", "messages", "dm", "dms", "chat", "chats", "instagram", "insta", "ig"]):
@@ -1645,6 +1692,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             if res.get("status") == "manual_action_required":
                 return {
                     "reply": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein.",
+                    "reply": "Instagram requires manual login or security verification. Please check your browser window.",
                     "action": res
                 }
             return {"reply": res.get("message", "Instagram unread checked."), "action": res}
@@ -1751,13 +1799,13 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
 
             if res.get("status") == "manual_action_required":
                 return {
-                    "reply": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein.",
+                    "reply": "Instagram requires manual login or security verification. Please check your browser window.",
                     "action": res
                 }
             elif not res.get("success"):
-                err_msg = res.get("message") or res.get("error") or "Message deliver nahi ho saka."
-                return {"reply": f"Kshama karein, Instagram par '{target_user}' ko message nahi bheja ja saka: {err_msg}", "action": res}
-            return {"reply": f"Instagram par '{target_user}' ko message bhej diya gaya hai: '{msg_body}'", "action": res}
+                err_msg = res.get("message") or res.get("error") or "Message could not be delivered."
+                return {"reply": f"Sorry, could not send Instagram message to '{target_user}': {err_msg}", "action": res}
+            return {"reply": f"Sent Instagram message to '{target_user}': '{msg_body}'.", "action": res}
 
         # Check for Missing Info (username provided, but no message)
         m_missing_hi = re.search(r'(?:instagram|insta|ig\s*(?:par|pe)?\s*)?([a-zA-Z0-9_.]+)\s+ko\s+(?:instagram|insta|ig\s*(?:par|pe)?\s*)?(?:dm|message|msg)?', text, re.IGNORECASE)
@@ -1793,6 +1841,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         else:
             res = actions.open_website("whatsapp")
         return {"reply": "WhatsApp Web open kar diya hai!", "action": res}
+        return {"reply": f"Opened WhatsApp Web for you, {_CALL_NAME}!", "action": res}
 
     elif routed.get("intent") == "whatsapp_message":
         target_contact = routed.get("contact")
@@ -1805,11 +1854,11 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             else:
                 res = actions.send_whatsapp_message(contact_name=target_contact, message=msg_content)
         if not res.get("success"):
-            err_msg = res.get("message") or res.get("error") or "Message deliver nahi ho saka."
-            return {"reply": f"Kshama karein, WhatsApp par '{target_contact}' ko message nahi bheja ja saka: {err_msg}", "action": res}
+            err_msg = res.get("message") or res.get("error") or "Message could not be delivered."
+            return {"reply": f"Sorry, could not send message to '{target_contact}' on WhatsApp: {err_msg}", "action": res}
         elif res.get("status") == "opened_whatsapp_web":
-            return {"reply": res.get("message", f"WhatsApp Web open kar diya hai. Kripya '{target_contact}' ki chat me message bhejein."), "action": res}
-        return {"reply": f"WhatsApp par '{target_contact}' ko message bhej diya gaya hai: '{msg_content}'", "action": res}
+            return {"reply": res.get("message", f"Opened WhatsApp Web. Please send the message in '{target_contact}' chat."), "action": res}
+        return {"reply": f"Message sent to '{target_contact}' on WhatsApp: '{msg_content}'", "action": res}
 
     elif routed.get("intent") == "whatsapp_clarification_needed":
         target_contact = routed.get("contact")
@@ -1835,14 +1884,17 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
         if res.get("offline"):
             return {
                 "reply": f"Kshama karein, laptop executor offline hai: '{target.capitalize()}' open nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                "reply": f"Sorry, the laptop executor is offline. Could not open '{target.capitalize()}'. Please start local_executor.py on your laptop.",
                 "action": res
             }
         elif res.get("timeout"):
             return {
                 "reply": f"Kshama karein, laptop executor timed out: '{target.capitalize()}' open nahi ho saka.",
+                "reply": f"Sorry, the laptop executor timed out. Could not open '{target.capitalize()}'.",
                 "action": res
             }
         return {"reply": f"{target.capitalize()} open kar diya hai.", "action": res}
+        return {"reply": f"I have opened {target.capitalize()} for you.", "action": res}
 
 
     # 15. Open Apps / Websites
@@ -1862,6 +1914,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                 if app_target.strip().lower() in generic_terms:
                     return {
                         "reply": "Aapko kaunsa app open karna hai? Kripya naam batayein, jaise Notepad, Chrome, Calculator ya VS Code.",
+                        "reply": "Which application would you like to open? Please specify a name, such as Notepad, Chrome, Calculator, or VS Code.",
                         "action": None
                     }
                 session_manager.record_last_action(session_id, app_target)
@@ -1872,23 +1925,28 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                     else:
                         res = actions.open_website(target_site)
                     return {"reply": f"{app_target.capitalize()} open kar diya hai.", "action": res}
+                    return {"reply": f"I have opened {app_target.capitalize()} for you.", "action": res}
                 res = dispatch_pc_tool_sync("open_app", {"app_name": app_target})
                 if res.get("offline"):
                     return {
                         "reply": f"Kshama karein, laptop executor offline hai: '{app_target.capitalize()}' open nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                        "reply": f"Sorry, the laptop executor is offline. Could not open '{app_target.capitalize()}'. Please start local_executor.py on your laptop.",
                         "action": res
                     }
                 elif res.get("timeout"):
                     return {
                         "reply": f"Kshama karein, laptop executor timed out: '{app_target.capitalize()}' open nahi ho saka.",
+                        "reply": f"Sorry, the laptop executor timed out. Could not open '{app_target.capitalize()}'.",
                         "action": res
                     }
                 elif not res.get("success"):
                     return {
                         "reply": f"Kshama karein, '{app_target.capitalize()}' open nahi ho saka: {res.get('message', 'Application nahi mila.')}",
+                        "reply": f"Sorry, could not open '{app_target.capitalize()}': {res.get('message', 'Application not found.')}",
                         "action": res
                     }
                 return {"reply": f"{app_target.capitalize()} open kar diya hai.", "action": res}
+                return {"reply": f"I have opened {app_target.capitalize()} for you.", "action": res}
 
     # 16. Close Apps
     close_keywords = ["close", "band karo", "exit", "terminate", "hatao"]
@@ -1906,6 +1964,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
                 if res.get("offline"):
                     return {
                         "reply": f"Kshama karein, laptop executor offline hai: '{app_target.capitalize()}' band nahi ho saka. Kripya apne laptop par local_executor.py start karein.",
+                        "reply": f"Sorry, the laptop executor is offline. Could not close '{app_target.capitalize()}'. Please start local_executor.py on your laptop.",
                         "action": res
                     }
                 elif res.get("timeout"):
@@ -2243,24 +2302,29 @@ async def _process_via_openrouter(user_text: str, session_id: str, openrouter_ke
             if sq:
                 last_action_res = dispatch_action_safe("play_youtube_video", {"query": sq})
                 clean_response = f"YouTube par '{sq}' chala diya hai Boss."
+                clean_response = f"Playing '{sq}' on YouTube for you, {_CALL_NAME}."
             else:
                 last_action_res = dispatch_action_safe("open_website", {"website": "youtube"})
                 clean_response = "YouTube open kar diya hai Boss."
+                clean_response = f"I have opened YouTube for you, {_CALL_NAME}."
         elif "COMMAND: PLAY_SPOTIFY |" in clean_response or re.search(r'COMMAND:\s*PLAY_SPOTIFY\s*\|', clean_response, re.I):
             parts = re.split(r'COMMAND:\s*PLAY_SPOTIFY\s*\|', clean_response, flags=re.I)
             sq = parts[1].strip() if len(parts) > 1 else ""
             sq = re.sub(r'[\r\n].*', '', sq).strip().strip('"\'')
             last_action_res = dispatch_action_safe("play_spotify_music", {"query": sq})
             clean_response = f"Spotify par '{sq}' play kar diya hai Boss." if sq else "Spotify par music chala diya hai Boss."
+            clean_response = f"Playing '{sq}' on Spotify for you, {_CALL_NAME}." if sq else f"Playing music on Spotify for you, {_CALL_NAME}."
         elif "COMMAND: SEARCH_INSTAGRAM |" in clean_response or re.search(r'COMMAND:\s*SEARCH_INSTAGRAM\s*\|', clean_response, re.I):
             parts = re.split(r'COMMAND:\s*SEARCH_INSTAGRAM\s*\|', clean_response, flags=re.I)
             sq = parts[1].strip() if len(parts) > 1 else ""
             sq = re.sub(r'[\r\n].*', '', sq).strip().strip('"\'')
             last_action_res = dispatch_action_safe("search_instagram_user", {"query": sq})
             clean_response = f"Instagram par '{sq}' search kar diya hai Boss." if sq else "Instagram open kar diya hai Boss."
+            clean_response = f"Searching for '{sq}' on Instagram for you, {_CALL_NAME}." if sq else f"I have opened Instagram for you, {_CALL_NAME}."
         elif "ACTION: OPEN_URL_WHATSAPP" in clean_response or "ACTION: OPEN_WHATSAPP" in clean_response:
             last_action_res = dispatch_action_safe("open_website", {"website": "whatsapp"})
             clean_response = "WhatsApp Web open kar diya hai Boss."
+            clean_response = f"I have opened WhatsApp Web for you, {_CALL_NAME}."
 
     # Format speech-friendly reply (remove markdown formatting symbols)
     speech_reply = re.sub(r'[*#`_]', '', clean_response).strip()
@@ -2312,6 +2376,7 @@ async def run_live_session(
     """
     if not user_text or not isinstance(user_text, str) or not user_text.strip():
         return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+        return {"reply": "I didn't hear anything. Please speak again.", "action": None}
 
     clean_text = user_text.strip()
     t0 = time.perf_counter()
@@ -2435,6 +2500,7 @@ async def run_live_session(
                             reply_text = last_action_payload["message"]
                         else:
                             reply_text = "Kaam kar diya gaya hai."
+                            reply_text = "Task completed successfully."
 
                     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
                     logger.info(
@@ -2601,6 +2667,7 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
         # 3. Honest reply if Gemini is actively circuit-broken/exhausted from 429 and OpenRouter could not fulfill the general query
         if fallback_res.get("action") is None and is_gemini_circuit_broken():
             fallback_res["reply"] = "AI quota abhi khatam ho gayi hai ya servers busy hain, kripya thodi der baad try karein. (Lekin local PC commands jaise apps kholna, gaana chalana abhi bhi kaam kar rahe hain)."
+            fallback_res["reply"] = "AI cloud quota is currently exhausted or servers are busy. Please try again in a few moments. (Local PC commands like opening apps and media playback are still operational)."
             fallback_res["degraded_mode"] = True
             fallback_res["ai_status"] = "degraded"
             fallback_res["degraded_reason"] = f"Gemini quota exhausted / circuit-broken ({_gemini_cooldown_reason[:100] if _gemini_cooldown_reason else '429'})"
@@ -2815,10 +2882,13 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
                 act_res = dispatch_action_safe("send_whatsapp_message", {"contact_name": contact, "message": message})
                 if not act_res.get("success"):
                     reply_text = f"Kshama karein, WhatsApp par '{contact}' ko message nahi bheja ja saka: {act_res.get('message', 'Error')}"
+                    reply_text = f"Sorry, could not send message to '{contact}' on WhatsApp: {act_res.get('message', 'Error')}"
                 elif act_res.get("status") == "opened_whatsapp_web":
                     reply_text = act_res.get("message", f"WhatsApp Web open kar diya hai. Kripya '{contact}' ki chat me message bhejein.")
+                    reply_text = act_res.get("message", f"Opened WhatsApp Web. Please send the message in '{contact}' chat.")
                 else:
                     reply_text = f"WhatsApp par '{contact}' ko message bhej diya gaya hai: '{message}'."
+                    reply_text = f"Message sent to '{contact}' on WhatsApp: '{message}'."
                 return {"reply": reply_text, "action": act_res}
 
         elif act_type in ["send_instagram_dm", "send_instagram_message"] or any(k in clean_response for k in ["send_instagram_dm", "send_instagram_message"]):
@@ -2841,17 +2911,22 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
 
                 if act_res.get("status") == "manual_action_required":
                     reply_text = "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein."
+                    reply_text = "Manual login or security verification is required on Instagram. Please check the browser window."
                 elif not act_res.get("success"):
                     err_msg = act_res.get("message") or act_res.get("error") or "Message deliver nahi ho saka."
                     reply_text = f"Kshama karein, Instagram par '{ig_user}' ko message nahi bheja ja saka: {err_msg}"
+                    err_msg = act_res.get("message") or act_res.get("error") or "Message could not be delivered."
+                    reply_text = f"Sorry, could not send message to '{ig_user}' on Instagram: {err_msg}"
                 else:
                     reply_text = f"Instagram par '{ig_user}' ko message bhej diya gaya hai: '{ig_msg}'"
+                    reply_text = f"Message sent to '{ig_user}' on Instagram: '{ig_msg}'"
                 return {"reply": reply_text, "action": act_res}
 
         elif act_type == "search_instagram_user":
             q_user = action_data.get("query", "")
             act_res = dispatch_action_safe("search_instagram_user", {"query": q_user})
             return {"reply": act_res.get("message", f"Instagram par '{q_user}' search kar diya hai."), "action": act_res}
+            return {"reply": act_res.get("message", f"Searched for '{q_user}' on Instagram."), "action": act_res}
 
         elif act_type == "search_web_for_answer":
             q_web = action_data.get("query", "")
@@ -2909,8 +2984,10 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             act_res = dispatch_action_safe("open_website", {"website": "whatsapp"})
             if not act_res.get("success"):
                 reply_text = f"Kshama karein, WhatsApp open nahi ho saka: {act_res.get('message', 'Error')}"
+                reply_text = f"Sorry, could not open WhatsApp: {act_res.get('message', 'Error')}"
             else:
                 reply_text = clean_response if (clean_response and "khol" not in clean_response.lower()) else "WhatsApp Web open kar diya hai!"
+                reply_text = clean_response if (clean_response and "khol" not in clean_response.lower()) else "I have opened WhatsApp Web for you."
             return {
                 "reply": reply_text.strip(),
                 "action": act_res
@@ -3001,6 +3078,7 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             logger.error(f"Fallback recovery error: {fb_err}")
             fallback_res = {
                 "reply": "Kshama karein, main abhi yeh command process nahi kar pa raha hoon. Kripya dobara koshish karein.",
+                "reply": "Sorry, I am unable to process this command right now. Please try again.",
                 "action": {"status": "error", "error": str(fb_err)}
             }
 
@@ -3044,8 +3122,10 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             )
             if is_quota_exhausted:
                 fallback_res["reply"] = "AI quota abhi khatam ho gayi hai ya servers busy hain, kripya thodi der baad try karein. (Lekin local PC commands jaise apps kholna, gaana chalana abhi bhi kaam kar rahe hain)."
+                fallback_res["reply"] = "AI cloud quota is currently exhausted or servers are busy. Please try again later. (Local PC commands like opening apps and media playback are still operational)."
             else:
                 fallback_res["reply"] = "AI service abhi temporarily unavailable hai, thodi der baad try karein. Local PC commands jaise apps kholna normal chal rahe hain."
+                fallback_res["reply"] = "AI service is temporarily unavailable. Please try again later. Local PC commands are working normally."
             fallback_res["degraded_mode"] = True
             fallback_res["ai_status"] = "degraded"
             fallback_res["degraded_reason"] = f"Gemini ({type(e).__name__}) and OpenRouter are unavailable."
@@ -3060,6 +3140,7 @@ async def process_voice_command(user_text: str, session_id: str = "default", is_
     """
     if not user_text or not isinstance(user_text, str) or not user_text.strip():
         return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+        return {"reply": "I didn't hear anything. Please speak again.", "action": None}
     clean_text = user_text.strip()
 
     if is_mobile is not None:

@@ -408,12 +408,14 @@ async def handle_chat(req: ChatRequest, request: Request):
         )
         brain_result = {
             "reply": "Kshama karein, command process hone mein zyaada samay lag gaya. Kripya dobara koshish karein.",
+            "reply": "Sorry, the command took too long to process. Please try again.",
             "action": {"status": "timeout", "error": "Request timed out"}
         }
     except Exception as e:
         logger.error(f"Critical error in process_voice_command: {e}")
         brain_result = {
             "reply": "Sorry (Kshama karein), a technical error prevented this command from completing.",
+            "reply": "Sorry, a technical error prevented this command from completing.",
             "action": {"status": "error", "error": str(e)}
         }
     reply_text = brain_result.get("reply", "Task completed successfully.")
@@ -807,12 +809,14 @@ async def handle_voice_upload(
             )
             brain_result = {
                 "reply": "Kshama karein, command process hone mein zyaada samay lag gaya. Kripya dobara koshish karein.",
+                "reply": "Sorry, the command took too long to process. Please try again.",
                 "action": {"status": "timeout", "error": "Request timed out"}
             }
         except Exception as e:
             logger.error(f"Critical error in voice upload process_voice_command: {e}")
             brain_result = {
                 "reply": "Sorry (Kshama karein), a technical error prevented this command from completing.",
+                "reply": "Sorry, a technical error prevented this command from completing.",
                 "action": {"status": "error", "error": str(e)}
             }
         reply_text = brain_result.get("reply", "Task completed successfully.")

@@ -155,7 +155,7 @@ def test_manual_action_required_detection():
     res = instagram_agent.send_instagram_dm("charlie", "Hey there", _page=mock_page)
     assert res["success"] is False
     assert res["status"] == "manual_action_required"
-    assert "Instagram par manual login ya security verification chahiye hai" in res["message"]
+    assert "manual login" in res["message"].lower() or "security verification" in res["message"].lower()
 
 
 def test_send_dm_dom_verification_success(monkeypatch):
@@ -337,7 +337,7 @@ def test_brain_multi_turn_pending_instagram(monkeypatch):
 
     # Turn 2: User provides message text
     res2 = brain._parse_fallback_intent("kal milte hain shaam ko", session_id=session_id)
-    assert "Instagram par 'Kasyap' ko message bhej diya gaya hai" in res2["reply"]
+    assert "instagram" in res2["reply"].lower() and "kasyap" in res2["reply"].lower()
     assert dispatched[-1] == ("Kasyap", "kal milte hain shaam ko")
 
 

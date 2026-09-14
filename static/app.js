@@ -63,6 +63,7 @@ function scrollChatToBottom(smooth = true) {
             top: transcriptHistoryContainer.scrollHeight,
             behavior: smooth ? 'smooth' : 'auto'
         });
+        transcriptHistoryContainer.scrollTop = transcriptHistoryContainer.scrollHeight;
         if (chatMessages && chatMessages.lastElementChild) {
             chatMessages.lastElementChild.scrollIntoView({
                 behavior: smooth ? 'smooth' : 'auto',
@@ -889,9 +890,24 @@ function appendChatMessage(role, text) {
     const header = document.createElement('div');
     header.className = 'bubble-header';
 
+    const senderGroup = document.createElement('div');
+    senderGroup.className = 'bubble-sender-group';
+
+    const avatar = document.createElement('span');
+    avatar.className = `bubble-avatar ${role === 'user' ? 'user-avatar' : 'astra-avatar'}`;
+    avatar.setAttribute('aria-hidden', 'true');
+    if (role === 'user') {
+        avatar.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+    } else {
+        avatar.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>';
+    }
+
     const sender = document.createElement('span');
     sender.className = 'bubble-sender';
     sender.textContent = role === 'user' ? 'You' : 'Astra';
+
+    senderGroup.appendChild(avatar);
+    senderGroup.appendChild(sender);
 
     const time = document.createElement('span');
     time.className = 'bubble-time';
@@ -899,6 +915,7 @@ function appendChatMessage(role, text) {
     time.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     header.appendChild(sender);
+    header.appendChild(senderGroup);
     header.appendChild(time);
 
     const content = document.createElement('div');
@@ -1171,6 +1188,7 @@ async function startMobileRecording() {
                 setVoiceState('idle');
                 setOrbState('idle');
                 if (statusText) statusText.textContent = "Koi aawaz capture nahi hui. Kripya dobara bolein.";
+                if (statusText) statusText.textContent = "No voice captured. Please speak again.";
                 return;
             }
 
@@ -1399,6 +1417,7 @@ async function sendVoiceUpload(audioBlob, mimeType, existingRequestId = null) {
         const isTimeout = didTimeout || (controller.signal.aborted && controller.signal.reason === 'timeout') || err.name === 'AbortError';
         const userNotice = isTimeout
             ? "Voice upload timeout ho gaya. Kripya dobara bolein."
+            ? "Voice upload timed out. Please try speaking again."
             : "Voice processing failed. Please try again.";
 
         if (statusText) {
@@ -1633,9 +1652,20 @@ function createStreamingAssistantBubble() {
     const header = document.createElement('div');
     header.className = 'bubble-header';
 
+    const senderGroup = document.createElement('div');
+    senderGroup.className = 'bubble-sender-group';
+
+    const avatar = document.createElement('span');
+    avatar.className = 'bubble-avatar astra-avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>';
+
     const sender = document.createElement('span');
     sender.className = 'bubble-sender';
     sender.textContent = 'Astra';
+
+    senderGroup.appendChild(avatar);
+    senderGroup.appendChild(sender);
 
     const time = document.createElement('span');
     time.className = 'bubble-time';
@@ -1643,6 +1673,7 @@ function createStreamingAssistantBubble() {
     time.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     header.appendChild(sender);
+    header.appendChild(senderGroup);
     header.appendChild(time);
 
     const content = document.createElement('div');
@@ -2045,6 +2076,8 @@ async function sendVoiceCommand(commandText) {
         const userNotice = isTimeout
             ? "Command timeout ho gaya. Kripya dobara bolein."
             : "Connection error. Kripya dobara koshish karein.";
+            ? "Command timed out. Please speak again."
+            : "Connection error. Please try again.";
 
         if (statusText) {
             statusText.textContent = `⚠️ ${userNotice}`;

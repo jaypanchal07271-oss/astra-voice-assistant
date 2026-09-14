@@ -59,6 +59,7 @@ self.addEventListener('fetch', (event) => {
           return new Response(
             JSON.stringify({
               reply: "Aap abhi offline hain. Server se connection nahi ho paa raha hai. Kripya network check karein.",
+              reply: "You are currently offline. Unable to connect to the server. Please check your network connection.",
               audio_url: null,
               action: { status: "offline", error: "network_unavailable" }
             }),

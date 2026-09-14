@@ -71,13 +71,13 @@ def test_offline_executor_immediate_error_and_clear_message():
     res = dispatch_pc_tool_sync("open_app", {"app_name": "notepad"})
     assert res["success"] is False
     assert res.get("offline") is True
-    assert "laptop executor offline" in res["message"].lower()
+    assert "laptop executor" in res["message"].lower() and "offline" in res["message"].lower()
 
     # Voice command fallback test
     fb_res = fallback_intent_parser("Notepad kholo")
     assert fb_res["action"].get("offline") is True
     reply = fb_res["reply"].lower()
-    assert "laptop executor offline" in reply
+    assert "laptop executor" in reply and "offline" in reply
     assert "local_executor.py" in reply
 
 
@@ -165,5 +165,5 @@ def test_chat_endpoint_with_offline_executor_in_fallback():
             )
             assert response.status_code == 200
             data = response.json()
-            assert "laptop executor offline" in data["reply"].lower()
+            assert "laptop executor" in data["reply"].lower() and "offline" in data["reply"].lower()
             assert data["action"].get("offline") is True

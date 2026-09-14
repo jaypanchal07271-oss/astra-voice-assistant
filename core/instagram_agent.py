@@ -458,6 +458,7 @@ def get_unread_dms(max_chats: int = 10, _page=None) -> List[Dict[str, Any]]:
                 "sender": "SYSTEM",
                 "unread_count": 0,
                 "snippet": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein.",
+                "snippet": "Manual login or security verification is required on Instagram. Please check the browser window.",
                 "timestamp": datetime.now().strftime("%I:%M %p"),
                 "status": "manual_action_required"
             }]
@@ -568,7 +569,7 @@ def search_instagram_user(query: str = "", _page=None) -> Dict[str, Any]:
                     "success": False,
                     "action": "search_instagram_user",
                     "status": "manual_action_required",
-                    "message": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein."
+                    "message": "Manual login or security verification is required on Instagram. Please check the browser window."
                 }
 
             is_404 = False
@@ -584,7 +585,7 @@ def search_instagram_user(query: str = "", _page=None) -> Dict[str, Any]:
                     "action": "search_instagram_user",
                     "query": clean_query,
                     "profile_url": profile_url,
-                    "message": f"Instagram par '{clean_query}' ki profile open kar di hai."
+                    "message": f"Opened Instagram profile for '{clean_query}'."
                 }
         except Exception as pe:
             logger.warning(f"Profile navigation failed for '{clean_query}': {pe}")
@@ -599,14 +600,14 @@ def search_instagram_user(query: str = "", _page=None) -> Dict[str, Any]:
                 "action": "search_instagram_user",
                 "query": clean_query,
                 "url": search_url,
-                "message": f"Instagram par '{clean_query}' search kar diya hai."
+                "message": f"Searched for '{clean_query}' on Instagram."
             }
         except Exception as se:
             return {
                 "success": False,
                 "action": "search_instagram_user",
                 "error": str(se),
-                "message": f"Instagram par search nahi ho saka: {se}"
+                "message": f"Could not search on Instagram: {se}"
             }
     except Exception as e:
         logger.error(f"search_instagram_user error: {e}")
@@ -830,7 +831,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
             "status": "daily_cap_reached",
             "count": current_count,
             "limit": max_limit,
-            "message": f"Daily Instagram DM limit ({max_limit}) pahunch chuka hai. Account suraksha ke liye message nahi bheja gaya."
+            "message": f"Daily Instagram DM limit ({max_limit}) reached. For account security, the message was not sent."
         })
 
     # 3. Launch Browser Session & Open Chat Thread
@@ -857,7 +858,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
                     "success": False,
                     "action": "send_instagram_dm",
                     "status": "manual_action_required",
-                    "message": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein."
+                    "message": "Manual login or security verification is required on Instagram. Please check the browser window."
                 })
 
             _dismiss_popups(page)
@@ -910,7 +911,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
                     "success": False,
                     "action": "send_instagram_dm",
                     "status": "manual_action_required",
-                    "message": "Instagram par manual login ya security verification chahiye hai. Kripya browser window check karein."
+                    "message": "Manual login or security verification is required on Instagram. Please check the browser window."
                 })
 
             chat_opened = _open_chat_via_search(page, clean_user)
@@ -920,7 +921,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
                     "success": False,
                     "action": "send_instagram_dm",
                     "status": "failed",
-                    "message": f"Instagram par '{clean_user}' user nahi mila."
+                    "message": f"User '{clean_user}' not found on Instagram."
                 })
 
         # -----------------------------------------------------------------
@@ -956,7 +957,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
                 "success": False,
                 "action": "send_instagram_dm",
                 "status": "failed",
-                "message": f"Instagram chat khul gaya par message composer nahi mila."
+                "message": "Instagram chat opened, but message composer could not be found."
             })
 
         composer.click()
@@ -1002,7 +1003,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
                 "action": "send_instagram_dm",
                 "status": "failed",
                 "error": "Message bubble did not appear in DOM within timeout.",
-                "message": f"Kshama karein, Instagram par '{clean_user}' ko message bheja nahi ja saka."
+                "message": f"Sorry, could not send message to '{clean_user}' on Instagram."
             })
 
         # 12. Success: Increment Daily Cap, Record Cooldown, and Log Success
@@ -1016,7 +1017,7 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
             "action": "send_instagram_dm",
             "status": "sent",
             "recipient": clean_user,
-            "message": f"Instagram par '{clean_user}' ko message bhej diya gaya hai: '{clean_msg}'"
+            "message": f"Message sent to '{clean_user}' on Instagram: '{clean_msg}'"
         })
 
     except Exception as e:
@@ -1026,6 +1027,6 @@ def send_instagram_dm(username: str, message: str, _page=None) -> Dict[str, Any]
             "action": "send_instagram_dm",
             "status": "failed",
             "error": str(e),
-            "message": f"Instagram DM bhejne me samasya aayi: {e}"
+            "message": f"Error sending Instagram DM: {e}"
         })
 

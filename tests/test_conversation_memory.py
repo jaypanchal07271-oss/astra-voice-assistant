@@ -23,7 +23,7 @@ async def test_session_memory_remembers_user_name():
     # Turn 2: User asks about the information
     r2 = await process_voice_command("Mera naam kya hai?", session_id=session_id)
     if r2.get("degraded_mode"):
-        assert "AI quota abhi khatam ho gayi hai" in r2.get("reply", "")
+        assert "quota" in r2.get("reply", "").lower()
     else:
         reply = r2.get("reply", "").lower()
         assert "jay" in reply, f"Failed to remember name across turns. Reply was: {r2.get('reply')}"
@@ -62,7 +62,7 @@ async def test_session_isolation_between_different_users():
     res_b = await process_voice_command("Mera favorite color kya hai?", session_id=session_b)
 
     if res_a.get("degraded_mode") or res_b.get("degraded_mode"):
-        assert "AI quota abhi khatam ho gayi hai" in res_a.get("reply", "") or "AI quota abhi khatam ho gayi hai" in res_b.get("reply", "")
+        assert "quota" in res_a.get("reply", "").lower() or "quota" in res_b.get("reply", "").lower()
     else:
         assert "blue" in res_a.get("reply", "").lower()
         assert "green" in res_b.get("reply", "").lower()

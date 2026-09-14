@@ -604,7 +604,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
             "success": False,
             "action": "send_whatsapp_message",
             "error": f"Invalid recipient contact name '{clean_name}'. Conjunctions cannot be used as contact names.",
-            "message": "Contact name invalid hai. Kripya sahi contact name batayein."
+            "message": "Invalid contact name. Please provide a valid contact name."
         }
 
     if not clean_msg:
@@ -751,7 +751,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                             "success": False,
                             "action": "send_whatsapp_message",
                             "error": f"WhatsApp contact mismatch: opened chat '{header_title}' instead of '{clean_name}'.",
-                            "message": f"WhatsApp contact '{clean_name}' verify nahi ho paya (opened chat '{header_title}')."
+                            "message": f"WhatsApp contact '{clean_name}' could not be verified (opened chat '{header_title}')."
                         }
 
             # Step 7: Type message into main chat composer
@@ -812,7 +812,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                     "success": False,
                     "action": "send_whatsapp_message",
                     "error": f"Message to '{clean_name}' could not be verified in outgoing delivery.",
-                    "message": f"WhatsApp par '{clean_name}' ko message bheja gaya par delivery verify nahi ho saki."
+                    "message": f"Message sent to '{clean_name}' on WhatsApp, but delivery verification could not be confirmed."
                 }
 
         except Exception as e:
@@ -821,7 +821,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                 "success": False,
                 "action": "send_whatsapp_message",
                 "error": str(e),
-                "message": f"WhatsApp message bhejne me samasya aayi: {e}"
+                "message": f"An issue occurred while sending the WhatsApp message: {e}"
             }
 
     # Desktop / PyAutoGUI Execution (for user's active Chrome / WhatsApp window)
@@ -845,7 +845,7 @@ def send_whatsapp_message_ui(contact_name: str, message: str, _page=None) -> Dic
                 "action": "send_whatsapp_message",
                 "status": "not_foreground",
                 "error": f"Active window '{active_info.get('title')}' does not contain 'WhatsApp' before opening new chat. Aborted keystrokes to prevent typing into unintended window.",
-                "message": f"WhatsApp window active nahi thi. Main WhatsApp Web open kar raha hoon, kripya '{clean_name}' ki chat me message bhejein."
+                "message": f"WhatsApp window was not active. Opening WhatsApp Web, please send the message in '{clean_name}' chat."
             }
 
         # STRICT GUARD: Verify active foreground window contains 'WhatsApp' with adaptive retry

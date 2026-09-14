@@ -55,6 +55,7 @@ class ExecutorBridge:
                         "success": False,
                         "status": "error",
                         "message": "Kshama karein, laptop executor disconnected. Command poori nahi ho saki.",
+                        "message": "Sorry, laptop executor disconnected. Command could not be completed.",
                         "offline": True
                     })
             self._pending_requests.clear()
@@ -103,6 +104,7 @@ class ExecutorBridge:
                 "success": False,
                 "status": "error",
                 "message": "Kshama karein, laptop executor offline hai. Kripya apne laptop par local_executor.py start karein.",
+                "message": "Sorry, laptop executor is offline. Please start local_executor.py on your laptop.",
                 "offline": True
             }
 
@@ -127,6 +129,7 @@ class ExecutorBridge:
                 "success": False,
                 "status": "error",
                 "message": f"Kshama karein, laptop executor connection error: {e}",
+                "message": f"Sorry, laptop executor connection error: {e}",
                 "offline": True,
                 "error": str(e)
             }
@@ -140,6 +143,7 @@ class ExecutorBridge:
                 "success": False,
                 "status": "error",
                 "message": f"Kshama karein, laptop executor timed out ({int(timeout)}s). Laptop unreachable hai.",
+                "message": f"Sorry, laptop executor timed out ({int(timeout)}s). Laptop is unreachable.",
                 "timeout": True
             }
         except Exception as e:
@@ -171,6 +175,7 @@ class ExecutorBridge:
                 "success": False,
                 "status": "error",
                 "message": "Kshama karein, laptop executor offline hai. Kripya apne laptop par local_executor.py start karein.",
+                "message": "Sorry, laptop executor is offline. Please start local_executor.py on your laptop.",
                 "offline": True
             }
 
