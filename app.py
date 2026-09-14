@@ -68,7 +68,7 @@ from config import (
     ASTRA_AUTH_TOKEN, CORS_ORIGINS, LLM_TIMEOUT, TTS_TIMEOUT,
     VOICE_TRANSCRIPTION_TIMEOUT, USE_GEMINI_LIVE, GEMINI_LIVE_MODEL
 )
-from core.brain import process_voice_command, run_live_session, session_manager
+from core.brain import process_voice_command, run_live_session, session_manager, get_ai_provider_status
 from core.tts import generate_audio
 import core.actions as actions
 from core.logger import get_logger, get_recent_logs, redact_params
@@ -233,6 +233,8 @@ async def get_status():
     except Exception:
         pass
 
+    ai_status = get_ai_provider_status()
+
     return {
         "status": "online",
         "has_api_key": has_key,
@@ -240,7 +242,9 @@ async def get_status():
         "auth_enabled": True,
         "executor_connected": executor_bridge.is_connected(),
         "tunnel_url": active_tunnel,
-        "mcp": mcp_info
+        "mcp": mcp_info,
+        "ai_status": ai_status,
+        "degraded_mode": ai_status.get("degraded_mode", False)
     }
 
 
@@ -468,6 +472,10 @@ async def handle_chat(req: ChatRequest, request: Request):
         "transcription": user_text,
         "tts_failed": tts_error
     }
+    if brain_result.get("degraded_mode"):
+        res_payload["degraded_mode"] = True
+        res_payload["ai_status"] = brain_result.get("ai_status", "degraded")
+        res_payload["degraded_reason"] = brain_result.get("degraded_reason", "")
     if tts_error:
         res_payload["tts_error"] = True
     return res_payload
@@ -625,7 +633,9 @@ async def websocket_live_endpoint(websocket: WebSocket):
                 "type": "done",
                 "reply": reply_text,
                 "action": action_info,
-                "audio_url": audio_url
+                "audio_url": audio_url,
+                "degraded_mode": res.get("degraded_mode", False),
+                "ai_status": res.get("ai_status", "ready")
             })
 
     except WebSocketDisconnect:

@@ -14,7 +14,7 @@ PRIMARY_PROVIDER = os.getenv("PRIMARY_PROVIDER", os.getenv("AI_PROVIDER", "gemin
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
 USE_GEMINI_LIVE = os.getenv("USE_GEMINI_LIVE", "false").strip().lower() in ("true", "1", "yes")
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview").strip() or "gemini-3.1-flash-live-preview"
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest").strip() or "gemini-2.5-flash-native-audio-latest"
 
 # Security & Authentication Token
 ASTRA_AUTH_TOKEN = os.getenv("ASTRA_AUTH_TOKEN", "").strip()
@@ -39,7 +39,7 @@ if not ASTRA_AUTH_TOKEN:
 # Voice configuration (Edge TTS Neural Voices & Tuning)
 VOICE_HINDI = os.getenv("VOICE_HINDI", "hi-IN-SwaraNeural")
 VOICE_ENGLISH = os.getenv("VOICE_ENGLISH", "en-IN-NeerjaNeural")
-TTS_RATE = os.getenv("TTS_RATE", "+18%")
+TTS_RATE = os.getenv("TTS_RATE", "+3%")
 TTS_PITCH = os.getenv("TTS_PITCH", "+0Hz")
 
 def _safe_float_env(var_name: str, default: float) -> float:
@@ -55,6 +55,7 @@ def _safe_float_env(var_name: str, default: float) -> float:
 LLM_TIMEOUT = _safe_float_env("LLM_TIMEOUT", 30.0)
 TTS_TIMEOUT = _safe_float_env("TTS_TIMEOUT", 15.0)
 VOICE_TRANSCRIPTION_TIMEOUT = _safe_float_env("VOICE_TRANSCRIPTION_TIMEOUT", 15.0)
+OPENROUTER_TIMEOUT = _safe_float_env("OPENROUTER_TIMEOUT", 20.0)
 
 # Server Host & Port (Default to localhost 127.0.0.1 for local security)
 HOST = os.getenv("HOST", "127.0.0.1")

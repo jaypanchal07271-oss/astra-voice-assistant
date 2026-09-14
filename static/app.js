@@ -42,6 +42,42 @@ const sidebarSettingsBtn = document.getElementById('sidebarSettingsBtn');
 const omnibarToolsBtn = document.getElementById('omnibarToolsBtn');
 const welcomeHero = document.getElementById('welcomeHero');
 const promptDeck = document.getElementById('promptDeck');
+const mainStage = document.getElementById('mainStage') || document.querySelector('.main-stage');
+const transcriptHistoryContainer = document.getElementById('transcriptHistoryContainer');
+const orbStageWrapper = document.getElementById('orbStageWrapper');
+
+function setConversationActive(active = true) {
+    if (!mainStage) return;
+    if (active) {
+        mainStage.classList.add('has-conversation');
+    } else {
+        mainStage.classList.remove('has-conversation');
+        mainStage.classList.remove('show-prompts');
+    }
+}
+
+function scrollChatToBottom(smooth = true) {
+    if (!transcriptHistoryContainer) return;
+    requestAnimationFrame(() => {
+        transcriptHistoryContainer.scrollTo({
+            top: transcriptHistoryContainer.scrollHeight,
+            behavior: smooth ? 'smooth' : 'auto'
+        });
+        if (chatMessages && chatMessages.lastElementChild) {
+            chatMessages.lastElementChild.scrollIntoView({
+                behavior: smooth ? 'smooth' : 'auto',
+                block: 'end'
+            });
+        }
+    });
+}
+
+// Initial state check
+if (chatMessages && chatMessages.children.length > 0) {
+    setConversationActive(true);
+} else {
+    setConversationActive(false);
+}
 
 // Settings Modal
 const settingsBtn = document.getElementById('settingsBtn');
@@ -845,6 +881,8 @@ function renderFormattedMessage(container, text) {
 function appendChatMessage(role, text) {
     if (!chatMessages || !text) return;
 
+    setConversationActive(true);
+
     const bubble = document.createElement('div');
     bubble.className = `chat-bubble ${role}`;
 
@@ -872,10 +910,7 @@ function appendChatMessage(role, text) {
     chatMessages.appendChild(bubble);
 
     // Smooth auto-scroll to newest message at the bottom
-    chatMessages.scrollTo({
-        top: chatMessages.scrollHeight,
-        behavior: 'smooth'
-    });
+    scrollChatToBottom(true);
 }
 
 // =====================================================================
@@ -1419,6 +1454,11 @@ function startListening(forceInterrupt = false) {
     manualStopRequested = false;
     userRequestedStop = false;
 
+    // Pre-warm / authenticate Live WebSocket so it is ready when user finishes speaking
+    try {
+        connectLiveWebSocket().catch(err => console.debug("[LiveWS] Pre-connect notice:", err));
+    } catch (e) {}
+
     // Reset speech recognition buffers for fresh voice interaction
     // (Preserve submittedTranscript & lastSubmissionTime to maintain 2.5s deduplication memory)
     accumulatedFinalTranscript = '';
@@ -1569,6 +1609,228 @@ function stopListening(isManualUserStop = false) {
     }
 }
 
+// =====================================================================
+// Gemini Live API Bidirectional WebSocket Manager (/ws/live)
+// =====================================================================
+let liveWs = null;
+let liveWsAuthenticated = false;
+let liveWsPendingAuthPromise = null;
+let currentLiveCommand = null;
+
+function getLiveWebSocketUrl() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws/live`;
+}
+
+function createStreamingAssistantBubble() {
+    if (!chatMessages) return null;
+
+    setConversationActive(true);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble assistant streaming';
+
+    const header = document.createElement('div');
+    header.className = 'bubble-header';
+
+    const sender = document.createElement('span');
+    sender.className = 'bubble-sender';
+    sender.textContent = 'Astra';
+
+    const time = document.createElement('span');
+    time.className = 'bubble-time';
+    const now = new Date();
+    time.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    header.appendChild(sender);
+    header.appendChild(time);
+
+    const content = document.createElement('div');
+    content.className = 'bubble-text';
+    content.innerHTML = '<span class="streaming-dot-pulse">●</span>';
+
+    bubble.appendChild(header);
+    bubble.appendChild(content);
+    chatMessages.appendChild(bubble);
+
+    scrollChatToBottom(true);
+
+    return { bubble, content };
+}
+
+function connectLiveWebSocket() {
+    if (liveWs && liveWs.readyState === WebSocket.OPEN && liveWsAuthenticated) {
+        return Promise.resolve(liveWs);
+    }
+    if (liveWsPendingAuthPromise) {
+        return liveWsPendingAuthPromise;
+    }
+
+    liveWsAuthenticated = false;
+    liveWsPendingAuthPromise = new Promise((resolve, reject) => {
+        try {
+            const wsUrl = getLiveWebSocketUrl();
+            console.log("[LiveWS] Connecting to:", wsUrl);
+            const ws = new WebSocket(wsUrl);
+
+            const authTimer = setTimeout(() => {
+                console.warn("[LiveWS] 5s authentication timeout exceeded.");
+                try { ws.close(); } catch (e) {}
+                liveWsPendingAuthPromise = null;
+                reject(new Error("WebSocket authentication timeout"));
+            }, 5000);
+
+            ws.onopen = () => {
+                console.log("[LiveWS] Connected. Sending first-frame auth token...");
+                ws.send(JSON.stringify({
+                    type: "auth",
+                    token: astraToken
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === "authenticated") {
+                        console.log("[LiveWS] Authenticated successfully with /ws/live.");
+                        clearTimeout(authTimer);
+                        liveWsAuthenticated = true;
+                        liveWs = ws;
+                        liveWsPendingAuthPromise = null;
+                        resolve(ws);
+                        return;
+                    }
+                    handleLiveMessage(msg);
+                } catch (err) {
+                    console.error("[LiveWS] Error handling message:", err);
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.warn("[LiveWS] Socket error:", err);
+                clearTimeout(authTimer);
+                liveWsAuthenticated = false;
+                liveWsPendingAuthPromise = null;
+                reject(err);
+            };
+
+            ws.onclose = (event) => {
+                console.log("[LiveWS] Socket closed code:", event.code, "reason:", event.reason);
+                clearTimeout(authTimer);
+                liveWsAuthenticated = false;
+                liveWs = null;
+                liveWsPendingAuthPromise = null;
+
+                if (currentLiveCommand && currentLiveCommand.resolveStream) {
+                    const failedCmd = currentLiveCommand;
+                    currentLiveCommand = null;
+                    console.warn("[LiveWS] Socket closed during active command; falling back to HTTP.");
+                    failedCmd.resolveStream(false);
+                }
+            };
+
+            liveWs = ws;
+        } catch (err) {
+            console.error("[LiveWS] WebSocket initialization failed:", err);
+            liveWsPendingAuthPromise = null;
+            reject(err);
+        }
+    });
+
+    return liveWsPendingAuthPromise;
+}
+
+function handleLiveMessage(msg) {
+    if (!currentLiveCommand) return;
+    const cmd = currentLiveCommand;
+
+    if (cmd.requestId !== activeRequestId) {
+        console.warn(`[LiveWS] Discarding message for stale request #${cmd.requestId}`);
+        return;
+    }
+
+    if (msg.type === 'start') {
+        console.log("[LiveWS] Live stream started for session:", msg.session_id);
+        if (!cmd.streamingBubble) {
+            cmd.streamingBubble = createStreamingAssistantBubble();
+        }
+        setOrbState('thinking');
+        if (statusText) statusText.textContent = "Astra is responding...";
+    } else if (msg.type === 'text_chunk') {
+        cmd.accumulatedText += (msg.delta || '');
+        if (!cmd.streamingBubble) {
+            cmd.streamingBubble = createStreamingAssistantBubble();
+        }
+        if (cmd.streamingBubble && cmd.streamingBubble.content) {
+            cmd.streamingBubble.content.innerHTML = '';
+            renderFormattedMessage(cmd.streamingBubble.content, cmd.accumulatedText);
+        }
+        if (assistantReply) {
+            assistantReply.textContent = `"${cmd.accumulatedText}"`;
+        }
+        scrollChatToBottom(false);
+    } else if (msg.type === 'action') {
+        console.log(`[LiveWS] Executing action: ${msg.tool}`, msg.args, msg.result);
+        if (statusText && msg.tool) {
+            statusText.textContent = `⚙️ Action: ${msg.tool}`;
+        }
+    } else if (msg.type === 'done') {
+        console.log("[LiveWS] Live stream complete. Audio URL:", msg.audio_url);
+        if (cmd.timeoutTimer) clearTimeout(cmd.timeoutTimer);
+        if (msg.degraded_mode !== undefined) {
+            updateAiStatusUI(msg);
+        }
+        const finalReply = msg.reply || cmd.accumulatedText;
+        if (cmd.streamingBubble) {
+            cmd.streamingBubble.bubble.classList.remove('streaming');
+            if (cmd.streamingBubble.content && finalReply) {
+                cmd.streamingBubble.content.innerHTML = '';
+                renderFormattedMessage(cmd.streamingBubble.content, finalReply);
+            }
+        } else if (finalReply) {
+            appendChatMessage('assistant', finalReply);
+        }
+        if (assistantReply && finalReply) {
+            assistantReply.textContent = `"${finalReply}"`;
+        }
+
+        if (msg.audio_url) {
+            playAudioResponse(msg.audio_url, cmd.requestId);
+        } else {
+            setOrbState('idle');
+            setVoiceState('idle');
+            isProcessing = false;
+            currentlyProcessingTranscript = '';
+            manualVoiceSession = false;
+            if (wakeWordEnabled && !isMobileDevice() && !manualStopRequested && !userRequestedStop) scheduleWakeWordRestart(300);
+        }
+
+        if (cmd.resolveStream) cmd.resolveStream(true);
+        currentLiveCommand = null;
+    } else if (msg.type === 'error') {
+        console.warn("[LiveWS] Live stream error frame:", msg.error);
+        if (cmd.timeoutTimer) clearTimeout(cmd.timeoutTimer);
+        const errReply = msg.reply || "Sorry, I couldn't process that command. Please try again.";
+        if (cmd.streamingBubble && cmd.streamingBubble.content) {
+            cmd.streamingBubble.bubble.classList.remove('streaming');
+            cmd.streamingBubble.content.innerHTML = '';
+            renderFormattedMessage(cmd.streamingBubble.content, errReply);
+        } else {
+            appendChatMessage('assistant', errReply);
+        }
+        if (statusText) statusText.textContent = `⚠️ ${errReply}`;
+        setVoiceState('idle');
+        setOrbState('idle');
+        isProcessing = false;
+        currentlyProcessingTranscript = '';
+        manualVoiceSession = false;
+        if (wakeWordEnabled && !isMobileDevice() && !manualStopRequested && !userRequestedStop) scheduleWakeWordRestart(300);
+
+        if (cmd.resolveStream) cmd.resolveStream(true);
+        currentLiveCommand = null;
+    }
+}
+
 // 3. Integration Layer: Send voice/text command to FastAPI (Authenticated & Multi-Turn Memory)
 async function sendVoiceCommand(commandText) {
     if (!commandText || !commandText.trim()) {
@@ -1625,6 +1887,56 @@ async function sendVoiceCommand(commandText) {
     setOrbState('thinking');
     if (statusText) statusText.textContent = "Thinking...";
 
+    // 1. Attempt Gemini Live API via bidirectional WebSocket (/ws/live)
+    let wsDispatched = false;
+    try {
+        const ws = await connectLiveWebSocket();
+        if (ws && ws.readyState === WebSocket.OPEN && liveWsAuthenticated) {
+            console.log("[LiveWS] Dispatching command over /ws/live:", cleanCommand);
+            wsDispatched = await new Promise((resolve) => {
+                const liveCmd = {
+                    text: cleanCommand,
+                    requestId: requestId,
+                    controller: controller,
+                    streamingBubble: null,
+                    accumulatedText: '',
+                    resolveStream: resolve,
+                    timeoutTimer: setTimeout(() => {
+                        console.warn("[LiveWS] Live WebSocket response timeout after 30s. Falling back to HTTP.");
+                        if (currentLiveCommand === liveCmd) {
+                            if (liveCmd.streamingBubble && liveCmd.streamingBubble.bubble) {
+                                try { liveCmd.streamingBubble.bubble.remove(); } catch (e) {}
+                            }
+                            currentLiveCommand = null;
+                            resolve(false);
+                        }
+                    }, FETCH_TIMEOUT_MS)
+                };
+                currentLiveCommand = liveCmd;
+
+                try {
+                    ws.send(JSON.stringify({
+                        text: cleanCommand,
+                        session_id: astraSessionId,
+                        lang: currentLang,
+                        is_mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+                    }));
+                } catch (sendErr) {
+                    console.warn("[LiveWS] ws.send failed, falling back:", sendErr);
+                    clearTimeout(liveCmd.timeoutTimer);
+                    currentLiveCommand = null;
+                    resolve(false);
+                }
+            });
+        }
+    } catch (wsErr) {
+        console.warn("[LiveWS] Live WebSocket unavailable, using HTTP fallback:", wsErr);
+    }
+
+    if (wsDispatched) {
+        return;
+    }
+
     let timeoutTimer = null;
     let didTimeout = false;
 
@@ -1669,6 +1981,9 @@ async function sendVoiceCommand(commandText) {
 
         const data = await response.json();
         console.log("[Astra] Backend request ended. Success:", data.success, "Data:", data);
+        if (data.degraded_mode !== undefined) {
+            updateAiStatusUI(data);
+        }
 
         if (requestId !== activeRequestId) {
             console.warn(`[Astra] Discarding stale JSON payload for request #${requestId}`);
@@ -1778,6 +2093,10 @@ function interruptPlayback(startListeningNow = false) {
     if (activeVoiceUploadAbortController) {
         try { activeVoiceUploadAbortController.abort('interrupted'); } catch (e) {}
         activeVoiceUploadAbortController = null;
+    }
+    if (currentLiveCommand) {
+        if (currentLiveCommand.timeoutTimer) clearTimeout(currentLiveCommand.timeoutTimer);
+        currentLiveCommand = null;
     }
 
     stopAndResetAudio('interrupt_playback');
@@ -2247,6 +2566,36 @@ function updateNetworkStatus() {
 window.addEventListener('online', updateNetworkStatus);
 window.addEventListener('offline', updateNetworkStatus);
 
+// AI Provider Status & Degraded Mode Controller
+function updateAiStatusUI(data) {
+    const badge = document.getElementById('aiStatusBadge');
+    const txt = document.getElementById('aiStatusText');
+    if (!badge || !txt) return;
+
+    const isDegraded = Boolean(data && (data.degraded_mode || (data.ai_status && data.ai_status.degraded_mode) || data.ai_status === 'degraded'));
+    if (isDegraded) {
+        badge.className = 'ai-status-badge degraded';
+        txt.textContent = '⚠️ AI Quota Exhausted';
+        badge.title = 'AI Quotas (Gemini/OpenRouter) currently exhausted or unavailable. Offline fallback is active for local PC commands.';
+    } else {
+        badge.className = 'ai-status-badge ready';
+        txt.textContent = 'AI Ready';
+        badge.title = 'AI Provider: Connected & Ready';
+    }
+}
+
+const aiStatusBadgeElem = document.getElementById('aiStatusBadge');
+if (aiStatusBadgeElem) {
+    aiStatusBadgeElem.addEventListener('click', () => {
+        const isDegraded = aiStatusBadgeElem.classList.contains('degraded');
+        if (isDegraded) {
+            alert("⚠️ AI Quota Status (Degraded Mode)\n\nGoogle Gemini free tier quota (20 req/day) is exhausted, and OpenRouter is currently unavailable.\n\nLocal PC automation (apps, Spotify music, YouTube, volume control, CMD) continues to work smoothly via offline rule-based routing.\n\nCloud AI conversation will automatically resume once the quota resets.");
+        } else {
+            alert("✅ AI Provider Status: Ready\n\nGemini and OpenRouter models are online and ready for conversational queries and tools.");
+        }
+    });
+}
+
 // Fetch & Render Real-Time MCP Status
 async function fetchAndRenderMCPStatus() {
     try {
@@ -2282,7 +2631,12 @@ async function fetchAndRenderMCPStatus() {
             mcpHeaderBadge.title = `MCP Server: ${statusStr}`;
         }
         if (mcpBadgeText) {
-            mcpBadgeText.textContent = `MCP: ${statusStr}`;
+            const isMobile = window.innerWidth <= 768;
+            if (isMobile) {
+                mcpBadgeText.textContent = data.enabled ? `${data.tool_count || 21} Tools` : 'MCP';
+            } else {
+                mcpBadgeText.textContent = data.enabled && data.tool_count ? `${data.tool_count} MCP Tools` : `MCP: ${statusStr}`;
+            }
         }
         if (mcpModalStatusPill) {
             mcpModalStatusPill.className = `mcp-status-pill ${statusClass}`;
@@ -2358,7 +2712,7 @@ async function fetchAndRenderMCPStatus() {
         const mcpHeaderBadge = document.getElementById('mcpHeaderBadge');
         const mcpBadgeText = document.getElementById('mcpBadgeText');
         if (mcpHeaderBadge) mcpHeaderBadge.className = 'mcp-badge not-configured';
-        if (mcpBadgeText) mcpBadgeText.textContent = 'MCP: Not Configured';
+        if (mcpBadgeText) mcpBadgeText.textContent = window.innerWidth <= 768 ? 'MCP' : 'MCP: Not Configured';
     }
 }
 
@@ -2519,18 +2873,9 @@ function startNewChatSession() {
 
     // 5. Reset chat messages back to clean initial state
     if (chatMessages) {
-        chatMessages.innerHTML = `
-            <div class="chat-bubble assistant">
-                <div class="bubble-header">
-                    <span class="bubble-sender">Astra</span>
-                    <span class="bubble-time">Ready</span>
-                </div>
-                <div class="bubble-content">
-                    <p class="bubble-text" id="assistantReply">"Namaste! Bolo kya open karna hai?"</p>
-                </div>
-            </div>
-        `;
+        chatMessages.innerHTML = '';
     }
+    setConversationActive(false);
 
     // 6. Reset transcripts and status
     if (liveTranscript) liveTranscript.textContent = '';
@@ -2567,7 +2912,9 @@ if (sidebarSettingsBtn) {
 }
 if (omnibarToolsBtn) {
     omnibarToolsBtn.addEventListener('click', () => {
-        if (promptDeck) {
+        if (mainStage && mainStage.classList.contains('has-conversation')) {
+            mainStage.classList.toggle('show-prompts');
+        } else if (promptDeck) {
             promptDeck.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             promptDeck.classList.add('highlight-pulse');
             setTimeout(() => promptDeck.classList.remove('highlight-pulse'), 1200);
@@ -2580,11 +2927,21 @@ document.querySelectorAll('.prompt-card, .session-item, .auto-quick-chip, .mcp-t
     el.addEventListener('click', () => {
         const cmd = el.getAttribute('data-cmd');
         if (cmd) {
+            if (mainStage) mainStage.classList.remove('show-prompts');
             closeMobileDrawer();
             sendVoiceCommand(cmd);
         }
     });
 });
+
+// Click on compact orb header in conversation mode to talk
+if (orbStageWrapper) {
+    orbStageWrapper.addEventListener('click', (e) => {
+        if (mainStage && mainStage.classList.contains('has-conversation')) {
+            handleVoiceToggle(e);
+        }
+    });
+}
 
 
 if (saveKeyBtn) {
@@ -2780,12 +3137,20 @@ window.addEventListener('DOMContentLoaded', async () => {
         } catch (e) {}
     }
 
+    // Pre-warm / authenticate Live WebSocket streaming connection (/ws/live)
+    try {
+        connectLiveWebSocket().catch(err => console.debug("[LiveWS] Init pre-connect notice:", err));
+    } catch (e) {}
+
     try {
         const res = await fetch('/api/status', {
             credentials: 'same-origin',
             headers: { 'X-Astra-Token': astraToken }
         });
         const data = await res.json();
+        if (data) {
+            updateAiStatusUI(data);
+        }
         if (data && data.tunnel_url) {
             cachedTunnelUrl = data.tunnel_url;
             // If on mobile device via insecure HTTP, immediately offer one-tap switch to secure HTTPS

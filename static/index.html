@@ -132,6 +132,12 @@
 
                 <!-- Right: MCP Badge + Desktop Controls + Settings Cog -->
                 <div class="header-actions">
+                    <!-- AI Provider Health / Degraded Mode Status Badge -->
+                    <button class="ai-status-badge ready" id="aiStatusBadge" title="AI Provider: Ready" aria-label="AI Provider Health">
+                        <span class="ai-status-dot" aria-hidden="true"></span>
+                        <span class="ai-status-text" id="aiStatusText">AI Ready</span>
+                    </button>
+
                     <!-- Verified MCP Server Tool Bridge Badge -->
                     <button class="mcp-badge not-configured" id="mcpHeaderBadge" title="View Model Context Protocol (MCP) status" aria-label="MCP Tool Bridge Status">
                         <span class="mcp-icon" aria-hidden="true">⚡</span>
@@ -171,7 +177,7 @@
             </header>
 
             <!-- Centered Conversational Stage -->
-            <main class="main-stage">
+            <main class="main-stage" id="mainStage">
                 <!-- Gemini-Style Greeting Hero (Never clips on mobile) -->
                 <div class="welcome-hero" id="welcomeHero">
                     <h1 class="welcome-headline">
@@ -182,7 +188,7 @@
                 </div>
 
                 <!-- Unique 3D Gyroscopic Celestial Plasma AI Orb -->
-                <div class="orb-stage-wrapper">
+                <div class="orb-stage-wrapper" id="orbStageWrapper">
                     <!-- Real-time Voice Lifecycle Status Bar -->
                     <div class="status-container" role="status" aria-live="polite">
                         <span class="status-dot" id="statusDot" aria-hidden="true"></span>
@@ -271,15 +277,6 @@
                 <!-- Conversation History Console -->
                 <div class="transcript-history-container" id="transcriptHistoryContainer" role="log" aria-label="Conversation Messages">
                     <div class="chat-messages" id="chatMessages">
-                        <div class="chat-bubble assistant">
-                            <div class="bubble-header">
-                                <span class="bubble-sender">Astra</span>
-                                <span class="bubble-time">Ready</span>
-                            </div>
-                            <div class="bubble-content">
-                                <p class="bubble-text" id="assistantReply">"Namaste! Bolo kya open karna hai?"</p>
-                            </div>
-                        </div>
                     </div>
                     
                     <!-- Live Interim Speech Transcript Stream -->

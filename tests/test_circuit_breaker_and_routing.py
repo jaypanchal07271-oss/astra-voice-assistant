@@ -165,3 +165,59 @@ async def test_gemini_429_trips_breaker_and_fast_fallback_action():
     brain.reset_gemini_circuit_breaker()
 
 
+def test_get_ai_provider_status():
+    """Verify get_ai_provider_status tracks Gemini and OpenRouter availability and degraded mode."""
+    brain.reset_gemini_circuit_breaker()
+    brain.reset_openrouter_circuit_breaker()
+
+    with patch.dict("os.environ", {"GEMINI_API_KEY": "AIzaSyValidKey", "OPENROUTER_API_KEY": "sk-or-valid"}):
+        status = brain.get_ai_provider_status()
+        assert status["status"] == "ready"
+        assert not status["degraded_mode"]
+        assert status["gemini_available"]
+        assert status["openrouter_available"]
+
+        # Trip both
+        brain.trip_gemini_circuit_breaker("429 RESOURCE_EXHAUSTED", duration=60.0)
+        brain.trip_openrouter_circuit_breaker("Rate limit 429", duration=60.0)
+        status_degraded = brain.get_ai_provider_status()
+        assert status_degraded["status"] == "degraded"
+        assert status_degraded["degraded_mode"] is True
+
+    brain.reset_gemini_circuit_breaker()
+    brain.reset_openrouter_circuit_breaker()
+
+
+@pytest.mark.asyncio
+async def test_honest_fallback_on_total_quota_exhaustion_general_query():
+    """When all Gemini models and OpenRouter are exhausted/unavailable, general query receives honest quota reply."""
+    brain.reset_gemini_circuit_breaker()
+    brain.reset_openrouter_circuit_breaker()
+    session_id = "test_honest_quota_reply"
+    brain.set_active_session(session_id)
+
+    mock_429 = Exception("429 RESOURCE_EXHAUSTED: quota exceeded 20 requests per day")
+
+    with patch("core.brain.session_manager.get_or_create_chat") as mock_chat_factory, \
+         patch.dict("os.environ", {
+             "PRIMARY_PROVIDER": "gemini",
+             "GEMINI_API_KEY": "AIzaSyTestKey",
+             "OPENROUTER_API_KEY": ""
+         }):
+
+        mock_chat = MagicMock()
+        mock_chat.send_message.side_effect = mock_429
+        mock_chat_factory.return_value = mock_chat
+
+        # General knowledge query (not a local PC command like 'Notepad kholo')
+        res = await brain.process_voice_command("who is albert einstein", session_id=session_id)
+
+        # Must not be a generic canned reply pretending nothing is wrong
+        assert "AI quota abhi khatam ho gayi hai" in res["reply"]
+        assert res.get("degraded_mode") is True
+        assert res.get("ai_status") == "degraded"
+
+    brain.reset_gemini_circuit_breaker()
+    brain.reset_openrouter_circuit_breaker()
+
+

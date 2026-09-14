@@ -124,16 +124,34 @@ def clean_text_for_tts(text: str) -> str:
     s = re.sub(r'([,])(?=[^\s])', r'\1 ', s)
     s = re.sub(r'([.!?])(?=[A-Z\u0900-\u097F])', r'\1 ', s)
 
+    # 13b. Insert natural conversational breath pause after introductory acknowledgment phrases
+    s = re.sub(
+        r'\b(Bilkul|Zaroor|Haanji|Ji Boss|Sure|Certainly|Of course|Shukriya|Dhanyawad)\b(?:\s+(Boss|Jay|Sir))?\s*(?![,.!?])',
+        r'\g<0>, ',
+        s,
+        flags=re.IGNORECASE
+    )
+
     # 14. Collapse multiple whitespaces and newlines into single spaces
     s = re.sub(r'\s+', ' ', s).strip()
 
-    # 15. Clean leading & trailing punctuation for smooth terminal cadence
+    # 15. Clean leading & trailing punctuation for smooth terminal cadence & rising question inflection
     s = re.sub(r'^[,;:\-–—\s]+', '', s)
     s = re.sub(r'[,;:\-–—\s]+$', '', s)
-    if s and s[-1] not in '.!?।':
-        s += '.'
 
-    if not s or s in ('.', '।'):
+    # Detect trailing inquiry clauses to ensure '?' is preserved for natural rising pitch inflection
+    is_question = bool(re.search(
+        r'(?:\b(kya|kaise|kaisa|kyun|kab|kaha|kaun|bataoon|chahiye|karein|would you|could you|can I|how can|is there|shall I)\b[^.!?]*$|\?$)',
+        s,
+        re.IGNORECASE
+    ))
+
+    if s and s[-1] not in '.!?।':
+        s += '?' if is_question else '.'
+    elif s and s[-1] == '.' and is_question:
+        s = s[:-1] + '?'
+
+    if not s or s in ('.', '।', '?'):
         return "Kaam poora ho gaya hai."
 
     return s

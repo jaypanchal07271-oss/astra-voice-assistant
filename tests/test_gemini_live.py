@@ -227,3 +227,37 @@ def test_websocket_live_endpoint_authentication():
         assert "start" in received_types
         assert "done" in received_types
 
+
+def test_frontend_app_js_ws_live_integration():
+    """
+    Verifies that static/app.js implements the /ws/live WebSocket connection,
+    first-frame authentication, streaming UI updates, and HTTP fallback.
+    """
+    from pathlib import Path
+    app_js_path = Path(__file__).resolve().parent.parent / "static" / "app.js"
+    assert app_js_path.exists(), "static/app.js must exist"
+    content = app_js_path.read_text(encoding="utf-8")
+
+    # 1. Verifies WebSocket endpoint and protocol resolution
+    assert "/ws/live" in content
+    assert "connectLiveWebSocket" in content
+
+    # 2. Verifies first-frame authentication
+    assert 'type: "auth"' in content
+    assert 'token: astraToken' in content
+    assert 'msg.type === "authenticated"' in content
+
+    # 3. Verifies streaming message frames handling
+    assert "handleLiveMessage" in content
+    assert "msg.type === 'start'" in content
+    assert "msg.type === 'text_chunk'" in content
+    assert "msg.type === 'action'" in content
+    assert "msg.type === 'done'" in content
+
+    # 4. Verifies word-by-word streaming bubble creation
+    assert "createStreamingAssistantBubble" in content
+
+    # 5. Verifies fallback to HTTP (/api/chat) is retained
+    assert "fetch('/api/chat'" in content
+    assert "fetch('/api/voice_upload'" in content
+

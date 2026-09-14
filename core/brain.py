@@ -1761,8 +1761,17 @@ def reset_openrouter_circuit_breaker():
     _openrouter_cooldown_reason = ""
 
 
+def is_openrouter_circuit_broken() -> bool:
+    """Returns True if OpenRouter is actively rate-limited/circuit-broken."""
+    return time.time() < _openrouter_circuit_broken_until
+
+
 _gemini_circuit_broken_until: float = 0.0
 _gemini_cooldown_reason: str = ""
+
+def is_gemini_circuit_broken() -> bool:
+    """Returns True if Gemini is actively rate-limited/circuit-broken due to 429 quota exhaustion."""
+    return time.time() < _gemini_circuit_broken_until
 
 def is_gemini_available() -> bool:
     """Checks if Gemini is configured and not currently rate-limited by circuit breaker."""
@@ -1770,7 +1779,7 @@ def is_gemini_available() -> bool:
     api_key = env_gemini_key.strip() if env_gemini_key is not None else GEMINI_API_KEY
     if not api_key or api_key == "your_gemini_api_key_here":
         return False
-    if time.time() < _gemini_circuit_broken_until:
+    if is_gemini_circuit_broken():
         return False
     return True
 
@@ -1799,7 +1808,27 @@ def reset_gemini_circuit_breaker():
     _gemini_cooldown_reason = ""
 
 
-async def _process_via_openrouter(user_text: str, session_id: str, openrouter_key: str, model_name: str, timeout: float = 12.0) -> Dict[str, Any]:
+def get_ai_provider_status() -> Dict[str, Any]:
+    """
+    Returns the real-time operational status of all configured AI providers (Gemini & OpenRouter).
+    Detects if system is running in degraded offline mode due to quota exhaustion or circuit breaks.
+    """
+    gemini_ok = is_gemini_available()
+    openrouter_ok = is_openrouter_available()
+    degraded = (not gemini_ok) and (not openrouter_ok)
+    return {
+        "status": "degraded" if degraded else "ready",
+        "degraded_mode": degraded,
+        "gemini_available": gemini_ok,
+        "gemini_circuit_broken": not gemini_ok,
+        "gemini_cooldown_reason": _gemini_cooldown_reason if not gemini_ok else "",
+        "openrouter_available": openrouter_ok,
+        "openrouter_circuit_broken": not openrouter_ok,
+        "openrouter_cooldown_reason": _openrouter_cooldown_reason if not openrouter_ok else ""
+    }
+
+
+async def _process_via_openrouter(user_text: str, session_id: str, openrouter_key: str, model_name: str, timeout: float = 20.0) -> Dict[str, Any]:
     """
     Executes voice command via OpenRouter with multi-turn tool calling loop.
     Supports compound commands, system diagnostics, web search, and Gojo/Tech Lead persona.
@@ -2049,15 +2078,20 @@ async def run_live_session(
         effective_gemini_tools = TOOLS_LIST + mcp_tools if mcp_tools else TOOLS_LIST
 
         live_config = types.LiveConnectConfig(
-            response_modalities=["TEXT"],
+            response_modalities=[types.Modality.AUDIO],
             system_instruction=effective_gemini_instruction,
             tools=effective_gemini_tools,
             temperature=0.7
         )
 
-        primary_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview").strip() or "gemini-3.1-flash-live-preview"
+        primary_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest").strip() or "gemini-2.5-flash-native-audio-latest"
         candidate_models = [primary_model]
-        for alt in ["gemini-3.1-flash-live-preview", "gemini-live-2.5-flash-preview", "gemini-2.0-flash-exp"]:
+        for alt in [
+            "gemini-2.5-flash-native-audio-latest",
+            "gemini-3.1-flash-live-preview",
+            "gemini-2.5-flash-native-audio-preview-12-2025",
+            "gemini-2.5-flash-native-audio-preview-09-2025"
+        ]:
             if alt not in candidate_models:
                 candidate_models.append(alt)
 
@@ -2202,8 +2236,9 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
     if should_try_openrouter_first:
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
+        or_timeout = float(os.getenv("OPENROUTER_TIMEOUT", "20.0"))
         try:
-            res = await _process_via_openrouter(user_text, session_id, openrouter_key, openrouter_model, timeout=12.0)
+            res = await _process_via_openrouter(user_text, session_id, openrouter_key, openrouter_model, timeout=or_timeout)
             latency_ms = round((time.perf_counter() - t0) * 1000, 2)
             logger.info(
                 "Processed voice command via OpenRouter",
@@ -2218,12 +2253,17 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             return res
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+            status_code = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", None)
+            logger.error(
+                f"[OpenRouter] API call failed for model '{openrouter_model}': {type(e).__name__} (status={status_code}): {err_str}",
+                extra={"model": openrouter_model, "error_type": type(e).__name__, "status_code": status_code, "error": err_str}
+            )
+            if "429" in err_str or status_code == 429 or "rate_limit" in err_str.lower():
                 trip_openrouter_circuit_breaker(f"Rate limit 429: {err_str[:120]}", duration=3600.0)
-            elif isinstance(e, asyncio.TimeoutError):
-                trip_openrouter_circuit_breaker("OpenRouter call timed out", duration=180.0)
+            elif isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                trip_openrouter_circuit_breaker(f"OpenRouter call timed out after {or_timeout}s (model may be queued or reasoning on free tier)", duration=180.0)
             else:
-                logger.warning(f"OpenRouter call failed ({e}). Falling back to Gemini / local engine...")
+                logger.warning(f"OpenRouter call failed ({type(e).__name__}: {err_str}). Falling back to Gemini / local engine...")
 
     mode = "gemini_afc" if has_gemini else "fallback"
 
@@ -2250,20 +2290,33 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
             elapsed = time.perf_counter() - t0
             remaining_budget = max(0.0, 24.0 - elapsed)
+            or_timeout = float(os.getenv("OPENROUTER_TIMEOUT", "20.0"))
             if remaining_budget >= 4.0:
                 try:
                     res = await _process_via_openrouter(
-                        user_text, session_id, openrouter_key, openrouter_model, timeout=min(remaining_budget, 10.0)
+                        user_text, session_id, openrouter_key, openrouter_model, timeout=min(remaining_budget, or_timeout)
                     )
                     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
                     logger.info("Processed voice command via OpenRouter fallback", extra={"session_id": session_id, "latency_ms": latency_ms, "mode": "openrouter", "success": True})
                     return res
                 except Exception as e:
                     err_str = str(e)
-                    if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+                    status_code = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", None)
+                    logger.error(
+                        f"[OpenRouter] Fallback call failed for model '{openrouter_model}': {type(e).__name__} (status={status_code}): {err_str}",
+                        extra={"model": openrouter_model, "error_type": type(e).__name__, "status_code": status_code, "error": err_str}
+                    )
+                    if "429" in err_str or status_code == 429 or "rate_limit" in err_str.lower():
                         trip_openrouter_circuit_breaker(f"Rate limit 429: {err_str[:120]}", duration=3600.0)
-                    elif isinstance(e, asyncio.TimeoutError):
-                        trip_openrouter_circuit_breaker("OpenRouter call timed out", duration=180.0)
+                    elif isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                        trip_openrouter_circuit_breaker(f"OpenRouter fallback call timed out after {min(remaining_budget, or_timeout)}s", duration=180.0)
+
+        # 3. Honest reply if Gemini is actively circuit-broken/exhausted from 429 and OpenRouter could not fulfill the general query
+        if fallback_res.get("action") is None and is_gemini_circuit_broken():
+            fallback_res["reply"] = "AI quota abhi khatam ho gayi hai ya servers busy hain, kripya thodi der baad try karein. (Lekin local PC commands jaise apps kholna, gaana chalana abhi bhi kaam kar rahe hain)."
+            fallback_res["degraded_mode"] = True
+            fallback_res["ai_status"] = "degraded"
+            fallback_res["degraded_reason"] = f"Gemini quota exhausted / circuit-broken ({_gemini_cooldown_reason[:100] if _gemini_cooldown_reason else '429'})"
 
         latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         logger.info(
@@ -2660,24 +2713,48 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
         # 2. Check remaining time budget before attempting OpenRouter
         elapsed = time.perf_counter() - t0
         remaining_budget = max(0.0, 24.0 - elapsed)
+        or_timeout = float(os.getenv("OPENROUTER_TIMEOUT", "20.0"))
 
         if is_openrouter_available() and not should_try_openrouter_first and remaining_budget >= 4.0:
+            openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
             try:
-                openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-                openrouter_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
                 return await _process_via_openrouter(
                     user_text,
                     session_id,
                     openrouter_key,
                     openrouter_model,
-                    timeout=min(remaining_budget, 10.0)
+                    timeout=min(remaining_budget, or_timeout)
                 )
             except Exception as or_err:
                 err_str = str(or_err)
-                if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+                status_code = getattr(or_err, "status_code", None) or getattr(getattr(or_err, "response", None), "status_code", None)
+                logger.error(
+                    f"[OpenRouter] API call failed during recovery for model '{openrouter_model}': {type(or_err).__name__} (status={status_code}): {err_str}",
+                    extra={"model": openrouter_model, "error_type": type(or_err).__name__, "status_code": status_code, "error": err_str}
+                )
+                if "429" in err_str or status_code == 429 or "rate_limit" in err_str.lower():
                     trip_openrouter_circuit_breaker(f"Rate limit 429: {err_str[:120]}", duration=3600.0)
-                elif isinstance(or_err, asyncio.TimeoutError):
-                    trip_openrouter_circuit_breaker("OpenRouter call timed out", duration=180.0)
+                elif isinstance(or_err, (asyncio.TimeoutError, TimeoutError)):
+                    trip_openrouter_circuit_breaker(f"OpenRouter recovery call timed out after {min(remaining_budget, or_timeout)}s", duration=180.0)
+
+        # 3. Honest fallback for open-ended queries when all cloud AI providers are unavailable (quota exhausted or offline)
+        if fallback_res.get("action") is None:
+            err_msg_lower = str(e).lower()
+            is_quota_exhausted = (
+                "429" in err_msg_lower
+                or "resource_exhausted" in err_msg_lower
+                or "quota" in err_msg_lower
+                or "rate limit" in err_msg_lower
+                or not is_gemini_available()
+            )
+            if is_quota_exhausted:
+                fallback_res["reply"] = "AI quota abhi khatam ho gayi hai ya servers busy hain, kripya thodi der baad try karein. (Lekin local PC commands jaise apps kholna, gaana chalana abhi bhi kaam kar rahe hain)."
+            else:
+                fallback_res["reply"] = "AI service abhi temporarily unavailable hai, thodi der baad try karein. Local PC commands jaise apps kholna normal chal rahe hain."
+            fallback_res["degraded_mode"] = True
+            fallback_res["ai_status"] = "degraded"
+            fallback_res["degraded_reason"] = f"Gemini ({type(e).__name__}) and OpenRouter are unavailable."
 
         return fallback_res
 
