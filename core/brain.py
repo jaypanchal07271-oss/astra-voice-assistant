@@ -69,36 +69,34 @@ _CALL_NAME = _USER_PROFILE.get("call_name", "Boss")
 _CITY = _USER_PROFILE.get("city", "Ahmedabad")
 _ROLE = _USER_PROFILE.get("role", "Tech Lead & AI Developer")
 
-SYSTEM_INSTRUCTION = f"""You are Astra, an intelligent multilingual voice assistant (Hindi, English, Hinglish) for PC and mobile devices, companion to {_BOSS_NAME} ('{_CALL_NAME}'), who is a {_ROLE} based in {_CITY}.
+SYSTEM_INSTRUCTION = f"""You are Astra, an intelligent English-speaking AI voice assistant for PC and mobile devices, companion to {_BOSS_NAME} ('{_CALL_NAME}'), who is a {_ROLE} based in {_CITY}.
 
 CRITICAL RESPONSE RULES:
 
-1. NEVER use single-word replies like "Okay", "Done", "Yes", "Haan", "Theek hai". Always respond with complete, conversational sentences (minimum 15-25 words).
-   - ❌ BAD: "Done." / "Okay." / "Haan."
-   - ✅ GOOD: "Bilkul, maine aapke liye Notepad open kar diya hai {_CALL_NAME}. Kya aap kuch aur karna chahte hain?"
-   - ✅ GOOD: "Zaroor! Main abhi aapke liye Chrome browser khol raha hoon."
-   - ✅ GOOD: "Maine aapki baat samajh li hai {_CALL_NAME}. Ye raha aapka jawab..."
+1. NEVER use single-word replies like "Okay", "Done", "Yes". Always respond with complete, conversational sentences (minimum 15-25 words).
+   - ❌ BAD: "Done." / "Okay."
+   - ✅ GOOD: "I have opened Notepad for you, {_CALL_NAME}. Is there anything else you'd like to work on?"
+   - ✅ GOOD: "Sure thing! Launching Chrome browser right away for you."
+   - ✅ GOOD: "I have gathered the latest updates for you, {_CALL_NAME}. Here are the details..."
 
 2. When executing any tool/action, ALWAYS provide a detailed confirmation:
-   - ❌ BAD: "Notepad open kar diya."
+   - ❌ BAD: "Notepad opened."
    - ✅ GOOD: "I have successfully opened Notepad for you. You can now start typing your notes. Is there anything else you'd like me to help you with?"
-   - ✅ GOOD: "Bilkul! Main ne aapke liye Notepad application open kar di hai. Ab aap isme apni notes likh sakte hain. Kya aapko kuch aur chahiye?"
 
 3. For incomplete or unclear voice commands (common on mobile), politely ask for clarification:
    - User says: "Notepad"
    - You respond: "I heard you say 'Notepad'. Would you like me to open Notepad application, or did you want to do something else with it?"
 
-4. Match the user's language:
-   - Hindi/Hinglish input → Hindi/Hinglish response (use Roman script)
-   - English input → English response
-   - Never mix languages awkwardly
+4. Language Requirement:
+   - Always respond in natural, crisp, fluent English.
+   - Even if the user uses Hindi or Hinglish keywords, speak and reply in clear, natural English so all responses are consistent and easy to follow.
 
 5. When tools fail, explain what went wrong and offer alternatives:
    - ❌ BAD: "Error."
    - ✅ GOOD: "I'm sorry, I couldn't open that application. It seems like it's not installed on your system. Would you like me to help you find an alternative?"
 
 6. Be warm and conversational. Use phrases like:
-   - "Certainly!", "Of course!", "I'd be happy to help!", "Zaroor!", "Bilkul!", "Main khushi se aapki madad karunga!"
+   - "Certainly!", "Of course!", "I'd be happy to help!", "Right away!"
 
 7. Current Context:
    - Current Date/Time: {{current_datetime}}
@@ -110,12 +108,12 @@ Dual Nature:
 2. PC Automation DNA: You literally control this Windows PC. Automation is in your blood. When asked to perform an action on the PC (open apps, run CMD commands, play music, send messages, change volume), EXECUTE IMMEDIATELY.
 
 The "Just Do It" Rule (Critical):
-- NEVER ask permission. If {_CALL_NAME} says "Notepad kholo", do NOT reply "Kya main Notepad khol doon?". Execute the tool immediately and confirm crisply: "Notepad khol diya, {_CALL_NAME}!"
-- For compound requests (e.g., "Boss, CMD khol ke 'python --version' check karo aur Ahmedabad ka mausam batao"), call the required tools, gather the real outputs, and provide a single seamless, natural answer.
+- NEVER ask permission. If {_CALL_NAME} says "Open Notepad" or "Notepad kholo", do NOT reply "Shall I open Notepad?". Execute the tool immediately and confirm crisply: "I have opened Notepad for you, {_CALL_NAME}!"
+- For compound requests, call the required tools, gather the real outputs, and provide a single seamless, natural answer.
 
 Humanized Error Handling:
 - If a command or tool fails, NEVER output raw stack traces or "Error 404".
-- Speak humanly: "Arre yaar, command execute nahi ho paayi, ek baar syntax check kar lo." or "Website open nahi ho saki, ek baar connection check kar lo {_CALL_NAME}."
+- Speak humanly in English: "I was unable to execute that command, please verify the syntax or parameters." or "Could not reach the website, please check your network connection {_CALL_NAME}."
 
 Your Capabilities:
 1. Conversational Companion: If the user greets you, asks general questions, or chats with you, respond warmly, naturally, and concisely in 1-2 friendly sentences. Maintain context from previous turns in the conversation!
@@ -1011,73 +1009,73 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
     # 0. Basic Conversation, Greetings & Small Talk
     if re.search(r'\b(hey|hello|hi|hiya|helo|hlo|namaste|pranam|namaskar|suno|listen|adaab|radhe radhe|ram ram)\b', text) and not any(k in text for k in ["bhejo", "send", "message", "msg", "ko hi", "ko hello"]):
         return {
-            "reply": "Namaste! Main Astra hoon, aapka desktop AI voice assistant. Kahiye, aaj laptop par kya kaam karna hai?",
+            "reply": "Hello! I am Astra, your desktop AI voice assistant. How can I help you today?",
             "action": {"status": "conversation", "intent": "greeting"}
         }
 
     if re.search(r'\b(kaise ho|kaisa hai|how are you|kya haal|kya chal raha|sab theek|sab kaisa|whats up|what\'s up)\b', text) and not any(k in text for k in ["screen", "display", "bhejo", "send", "message", "msg", "dm", "say", "saying", "bolo", "likho"]):
         return {
-            "reply": "Main bilkul badhiya aur ready hoon! Aap bataiye, main aapke laptop par kya help kar sakta hoon?",
+            "reply": "I am doing great and ready to assist! How can I help you on your laptop today?",
             "action": {"status": "conversation", "intent": "smalltalk_status"}
         }
 
     if re.search(r'\b(who are you|kaun ho|tum kaun ho|aap kaun ho|tera naam kya|tumhara naam kya|introduce yourself|what is your name)\b', text):
         return {
-            "reply": "Mera naam Astra hai! Main aapka intelligent desktop voice assistant hoon. Main apps kholna, gaana chalana, screen dekhna aur PC control karna jaise kaam kar sakta hoon.",
+            "reply": "My name is Astra! I am your intelligent desktop voice assistant. I can open applications, play music, search the web, analyze your screen, and control your PC.",
             "action": {"status": "conversation", "intent": "identity"}
         }
 
     # Multi-turn user identity & preferences memory
-    if re.search(r'mera naam kya hai', text, re.I):
+    if re.search(r'(?:mera naam kya hai|what is my name|who am i)', text, re.I):
         saved_name = session_manager.get_user_data(session_id, "name")
         if saved_name:
-            return {"reply": f"Aapka naam {saved_name} hai.", "action": None}
-        return {"reply": "Mujhe abhi aapka naam nahi pata. Kripya apna naam batayein.", "action": None}
+            return {"reply": f"Your name is {saved_name}.", "action": None}
+        return {"reply": "I don't know your name yet. Please tell me your name.", "action": None}
 
-    m_name = re.search(r'mera naam\s+([a-zA-Z\s]+?)\s+(?:hai|rakho|note karo)\b', text, re.I)
+    m_name = re.search(r'(?:mera naam|my name is)\s+([a-zA-Z\s]+?)(?:\s+(?:hai|rakho|note karo)|$)', text, re.I)
     if m_name:
         extracted_name = m_name.group(1).strip()
-        if extracted_name.lower() not in ["kya", "kaunsa", "what"]:
+        if extracted_name.lower() not in ["kya", "kaunsa", "what", "unknown"]:
             session_manager.set_user_data(session_id, "name", extracted_name)
-            return {"reply": f"Namaste {extracted_name}! Maine aapka naam yaad rakh liya hai.", "action": None}
+            return {"reply": f"Hello {extracted_name}! I have remembered your name.", "action": None}
 
-    m_fav_q = re.search(r'mera favorite\s+([a-zA-Z]+)\s+kya hai\b', text, re.I)
+    m_fav_q = re.search(r'(?:mera favorite|what is my favorite)\s+([a-zA-Z]+)(?:\s+kya hai|\?)?', text, re.I)
     if m_fav_q:
         attr = m_fav_q.group(1).lower().strip()
         saved_val = session_manager.get_user_data(session_id, f"fav_{attr}")
         if saved_val:
-            return {"reply": f"Aapka favorite {attr} {saved_val} hai.", "action": None}
-        return {"reply": f"Mujhe aapka favorite {attr} nahi pata.", "action": None}
+            return {"reply": f"Your favorite {attr} is {saved_val}.", "action": None}
+        return {"reply": f"I don't know your favorite {attr} yet.", "action": None}
 
-    m_fav = re.search(r'mera favorite\s+([a-zA-Z]+)\s+([a-zA-Z]+)\s+hai\b', text, re.I)
+    m_fav = re.search(r'(?:mera favorite|my favorite)\s+([a-zA-Z]+)\s+(?:is\s+)?([a-zA-Z0-9_\s]+?)(?:\s+hai|$)', text, re.I)
     if m_fav:
         attr = m_fav.group(1).lower().strip()
         val = m_fav.group(2).strip()
         if val.lower() not in ["kya", "kaunsa", "kon", "what", "which"]:
             session_manager.set_user_data(session_id, f"fav_{attr}", val)
-            return {"reply": f"Aapka favorite {attr} '{val}' maine yaad rakh liya hai.", "action": None}
+            return {"reply": f"I have saved that your favorite {attr} is '{val}'.", "action": None}
 
     if re.search(r'\b(kya kar sakte ho|kya kya kar sakte|what can you do|features|madad|capabilities|help|kya aata hai)\b', text):
         return {
-            "reply": "Main aapke laptop par apps khol/band kar sakta hoon, screen analyze kar sakta hoon, Spotify gaane chala sakta hoon, dev environment start kar sakta hoon, reminders aur volume control kar sakta hoon.",
+            "reply": "I can open and close applications on your laptop, analyze your screen, play music on Spotify and YouTube, control volume, search the web, and automate PC tasks.",
             "action": {"status": "conversation", "intent": "help"}
         }
 
     if re.search(r'\b(thank you|thanks|dhanyawad|shukriya|bahut accha|great job|shabash|badhiya)\b', text):
         return {
-            "reply": "Aapka swagat hai! Hamesha aapki madad ke liye taiyar hoon. Kuch aur hukum ho toh batayein.",
+            "reply": "You are most welcome! Always ready to assist. Let me know if you need anything else.",
             "action": {"status": "conversation", "intent": "gratitude"}
         }
 
     if re.search(r'\b(are you there|sun rahe ho|meri aawaz|can you hear me|zinda ho)\b', text):
         return {
-            "reply": "Ji haan, main bilkul active hoon aur aapko sun raha hoon! Kahiye kya command hai?",
+            "reply": "Yes, I am right here and listening! What would you like me to do?",
             "action": {"status": "conversation", "intent": "presence"}
         }
 
     if re.search(r'\b(bye|goodbye|alvida|tata|see you|phir milte)\b', text):
         return {
-            "reply": "Alvida! Jab bhi zaroorat ho, bas ek baar bula lijiyega.",
+            "reply": "Goodbye! Whenever you need anything, just let me know.",
             "action": {"status": "conversation", "intent": "farewell"}
         }
 
@@ -1665,13 +1663,13 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
     # Helper to format clean, high-naturalness response for speech synthesis
     def _format_search_reply(user_query: str, raw_results: str) -> str:
         if not raw_results:
-            return "Web search results: Is baare mein jaankari nahi mil saki."
+            return "Web search results: No details found for this query."
         is_news = any(k in user_query.lower() for k in ["headline", "headlines", "news", "khabar", "khabrein", "updates", "today", "aaj"])
         titles = re.findall(r'\[\d+\]\s*(.*?)(?:\s*\(Source:.*?\)|$)', raw_results)
         if is_news and titles:
             top_headlines = [re.sub(r'\s*\|\s*.*$', '', t).strip() for t in titles[:3]]
             formatted = ', '.join([f'{i+1}. {t}' for i, t in enumerate(top_headlines)])
-            return f"Web search results - Aaj ki top headlines: {formatted}."
+            return f"Web search results - Today's top headlines: {formatted}."
         
         m_sum = re.search(r'Summary:\s*(.*?)(?:\n\[\d+\]|$)', raw_results, re.DOTALL)
         if m_sum:
@@ -1689,7 +1687,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             if res.get("success"):
                 summary_text = res.get("results", "")
                 return {"reply": _format_search_reply(user_text, summary_text), "action": res}
-            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": None}
+            return {"reply": f"Web search could not be completed: {res.get('error', 'Error')}", "action": None}
 
     m_search = re.search(
         r'^(?:search\s+(?:the\s+)?web\s+(?:for\s+)?|web\s+search\s+(?:for\s+)?|search\s+online\s+(?:for\s+)?|search\s+internet\s+(?:for\s+)?|internet\s+pe\s+search\s+karo\s+|web\s+pe\s+search\s+karo\s+)(.*)',
@@ -1703,7 +1701,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             if res.get("success"):
                 summary_text = res.get("results", "")
                 return {"reply": _format_search_reply(user_text, summary_text), "action": res}
-            return {"reply": f"Web search nahi ho paya: {res.get('error', 'Error')}", "action": None}
+            return {"reply": f"Web search could not be completed: {res.get('error', 'Error')}", "action": None}
 
     # Catch-all for open-ended inquiries/questions: Execute real-time web search instead of canned refusal
     clean_inquiry = re.sub(r'^(?:please|zara|yaar|bhai)\s+', '', text, flags=re.I).strip()
@@ -1719,7 +1717,7 @@ def _parse_fallback_intent(user_text: str, session_id: str = "default") -> Dict[
             logger.debug(f"[Fallback] Catch-all web search skipped: {search_err}")
 
     return {
-        "reply": "Ji, maine suna. Kripya batayein main aapki kya madad karoon, jaise koi app kholna, screen dekhna, gaana chalana ya dev environment start karna?",
+        "reply": "I'm listening! How can I help you today? You can ask me to open apps, search the web, play music, or check your screen.",
         "action": None
     }
 
@@ -1730,13 +1728,13 @@ def fallback_intent_parser(user_text: str, session_id: str = "default") -> Dict[
     Guaranteed to catch unexpected exceptions and return a safe generic response.
     """
     if not user_text or not isinstance(user_text, str) or not user_text.strip():
-        return {"reply": "Aapki aawaz nahi sunai di, kripya dobara bolein.", "action": None}
+        return {"reply": "I could not hear your voice clearly. Please speak again.", "action": None}
     try:
         return _parse_fallback_intent(user_text, session_id=session_id)
     except Exception as e:
         logger.error(f"Fallback intent parser error while processing '{user_text}': {e}")
         return {
-            "reply": "Kshama karein, is command ko execute karne mein dikkat aayi. Kripya dobara koshish karein.",
+            "reply": "Sorry, I encountered an issue executing this command. Please try again.",
             "action": {"status": "error", "error": str(e)}
         }
 
@@ -2440,7 +2438,7 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
                 logger.warning(f"[Gemini] Quota/rate limit 429 on all candidate models. Tripped Gemini circuit breaker; bypassing remaining models.")
             raise last_gemini_exc
 
-        ai_response = response.text if response and response.text else "Kaam kar diya gaya hai."
+        ai_response = response.text if response and response.text else "Task completed successfully."
 
         # Backend Failsafe: Clean markdown backticks and parse structured JSON
         clean_response = ai_response.replace("```json", "").replace("```", "").strip()
@@ -2473,13 +2471,13 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             if search_query:
                 act_res = dispatch_action_safe("play_youtube_video", {"query": search_query})
                 if act_res.get("success"):
-                    reply_text = f"YouTube par '{search_query}' chala diya hai."
+                    reply_text = f"Playing '{search_query}' on YouTube for you."
                 else:
-                    reply_text = f"Kshama karein, YouTube par '{search_query}' nahi chalaya ja saka: {act_res.get('message', 'Error')}"
+                    reply_text = f"Sorry, could not play '{search_query}' on YouTube: {act_res.get('message', 'Error')}"
                 return {"reply": reply_text, "action": act_res}
             else:
                 act_res = dispatch_action_safe("open_website", {"website": "youtube"})
-                return {"reply": "YouTube open kar diya hai.", "action": act_res}
+                return {"reply": "Opened YouTube for you.", "action": act_res}
 
         # Hybrid Interception: Spotify Music / Playlist Play
         elif act_type in ["PLAY_SPOTIFY", "play_spotify_music"] or re.search(r'COMMAND:\s*PLAY_SPOTIFY\s*\|', clean_response, re.I):
@@ -2494,7 +2492,7 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             search_query = re.sub(r'["\']', '', search_query).strip()
 
             act_res = dispatch_action_safe("play_spotify_music", {"query": search_query})
-            reply_text = act_res.get("message", f"Spotify par '{search_query}' play kar diya hai." if search_query else "Spotify par music play kar diya hai.")
+            reply_text = act_res.get("message", f"Playing '{search_query}' on Spotify." if search_query else "Playing music on Spotify.")
             return {"reply": reply_text, "action": act_res}
 
         # Hybrid Interception: Instagram User / ID Search
@@ -2512,17 +2510,17 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             search_query = search_query.lstrip("@").strip()
 
             act_res = dispatch_action_safe("search_instagram_user", {"query": search_query})
-            reply_text = act_res.get("message", f"Instagram par '{search_query}' search kar diya hai." if search_query else "Instagram open kar diya hai.")
+            reply_text = act_res.get("message", f"Searching for '{search_query}' on Instagram." if search_query else "Opened Instagram.")
             return {"reply": reply_text, "action": act_res}
 
         elif act_type == "OPEN_URL_WHATSAPP" or "ACTION: OPEN_URL_WHATSAPP" in clean_response or "ACTION: OPEN_WHATSAPP" in clean_response:
             act_res = dispatch_action_safe("open_website", {"website": "whatsapp"})
             if not act_res.get("success"):
-                reply_text = f"Kshama karein, WhatsApp open nahi ho saka: {act_res.get('message', 'Error')}"
+                reply_text = f"Sorry, could not open WhatsApp: {act_res.get('message', 'Error')}"
             else:
                 reply_clean = re.sub(r'ACTION:\s*OPEN_URL_WHATSAPP', '', clean_response, flags=re.I).strip()
                 reply_clean = re.sub(r'ACTION:\s*OPEN_WHATSAPP', '', reply_clean, flags=re.I).strip()
-                reply_text = reply_clean if reply_clean else "WhatsApp Web open kar diya hai!"
+                reply_text = reply_clean if reply_clean else "Opened WhatsApp Web."
             return {"reply": reply_text, "action": act_res}
 
         elif act_type == "send_whatsapp_message" or "send_whatsapp_message" in clean_response:
@@ -2617,13 +2615,13 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
             clean_site = "whatsapp" if "whatsapp" in str(site).lower() else str(site)
             site_display = "YouTube" if clean_site.lower() in ["youtube", "yt"] else clean_site.capitalize()
             act_res = dispatch_action_safe("open_website", {"website": clean_site, "search_query": query})
-            reply_text = f"{site_display} open kar diya hai." if act_res.get("success") else f"Kshama karein, {site_display} open nahi ho saka: {act_res.get('message', 'Error')}"
+            reply_text = act_res.get("message") or (f"Opened {site_display} for you." if act_res.get("success") else f"Sorry, could not open {site_display}: {act_res.get('message', 'Error')}")
             return {"reply": reply_text, "action": act_res}
 
         elif act_type in ["open_app", "open_application"]:
             app = action_data.get("app_name", "") or action_data.get("app", "")
             act_res = dispatch_action_safe("open_app", {"app_name": app})
-            reply_text = f"{app.capitalize()} open kar diya hai." if act_res.get("success") else f"Kshama karein, '{app.capitalize()}' open nahi ho saka: {act_res.get('message', 'Application nahi mila.')}"
+            reply_text = act_res.get("message") or (f"Opened {app.capitalize()} for you." if act_res.get("success") else f"Sorry, could not open '{app.capitalize()}': {act_res.get('message', 'Application not found.')}")
             return {"reply": reply_text, "action": act_res}
 
         elif act_type:
@@ -2691,9 +2689,9 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
                     site_key = next((k for k in actions.COMMON_SITES if k == target_name), target_name)
                     act_res = dispatch_action_safe("open_website", {"website": site_key})
                     if not act_res.get("success"):
-                        reply_text = f"Kshama karein, {site_key.capitalize()} open nahi ho saka: {act_res.get('message', 'Error')}"
+                        reply_text = f"Sorry, could not open {site_key.capitalize()}: {act_res.get('message', 'Error')}"
                     else:
-                        reply_text = f"{site_key.capitalize()} open kar diya hai."
+                        reply_text = f"Opened {site_key.capitalize()} for you."
                     return {
                         "reply": reply_text,
                         "action": act_res
@@ -2702,9 +2700,9 @@ async def _process_voice_command_core(user_text: str, session_id: str = "default
                     app_key = next((k for k in actions.COMMON_APP_MAP if k == target_name), target_name)
                     act_res = dispatch_action_safe("open_app", {"app_name": app_key})
                     if not act_res.get("success"):
-                        reply_text = f"Kshama karein, '{app_key.capitalize()}' open nahi ho saka: {act_res.get('message', 'Error')}"
+                        reply_text = f"Sorry, could not open '{app_key.capitalize()}': {act_res.get('message', 'Error')}"
                     else:
-                        reply_text = f"{app_key.capitalize()} open kar diya hai."
+                        reply_text = f"Opened {app_key.capitalize()} for you."
                     return {
                         "reply": reply_text,
                         "action": act_res

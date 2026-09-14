@@ -116,7 +116,7 @@ let wakeWordRestartTimeout = null;      // Track ambient restart timeout to canc
 let isTTSPlaying = false; // Primary flag: True from TTS preparation to completion
 let isSpeaking = false;   // Mirror flag for external checks and compatibility
 let isListening = false;
-let currentLang = 'hi-IN'; // default to Hindi/Hinglish (hi-IN)
+let currentLang = 'en-IN'; // default to English
 let recognition = null;
 let lastProcessedTranscript = "";
 let isProcessing = false;
@@ -2542,7 +2542,7 @@ langBtns.forEach(btn => {
         langBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const chosen = btn.dataset.lang;
-        currentLang = chosen === 'auto' ? 'hi-IN' : chosen;
+        currentLang = chosen === 'auto' ? 'en-IN' : chosen;
         if (recognition) {
             recognition.lang = currentLang;
         }

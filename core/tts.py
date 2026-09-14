@@ -50,7 +50,7 @@ def clean_text_for_tts(text: str) -> str:
     - Ensures complete, natural sentence flow without fragmented chunks.
     """
     if not text or not text.strip():
-        return "Kaam poora ho gaya hai."
+        return "Task completed successfully."
 
     s = text.strip()
 
@@ -152,7 +152,7 @@ def clean_text_for_tts(text: str) -> str:
         s = s[:-1] + '?'
 
     if not s or s in ('.', '।', '?'):
-        return "Kaam poora ho gaya hai."
+        return "Task completed successfully."
 
     return s
 
@@ -172,7 +172,7 @@ def detect_lang_from_text(text: str) -> str:
     return "hi" if matches >= 1 else "en"
 
 
-async def generate_audio(text: str, lang: str = "hi-IN", force_lang: str = "") -> str:
+async def generate_audio(text: str, lang: str = "en-IN", force_lang: str = "") -> str:
     """
     Generates an MP3 audio file from text using edge-tts.
     - Sanitizes text completely to eliminate robotic artifacting and pauses.
@@ -190,7 +190,7 @@ async def generate_audio(text: str, lang: str = "hi-IN", force_lang: str = "") -
         voice = VOICES["en"]
     else:
         detected = detect_lang_from_text(clean_text)
-        voice = VOICES.get(detected, VOICES["hi"])
+        voice = VOICES.get(detected, VOICES["en"])
 
     # Ensure audio directory exists
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)

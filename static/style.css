@@ -2265,90 +2265,120 @@ body {
 
 .main-stage.has-conversation .transcript-history-container {
     display: flex !important;
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
-    height: 100%;
-    max-height: 100%;
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto 0.35rem auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.35rem 0.5rem 0.5rem 0.5rem;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 6%, black 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 6%, black 100%);
 }
 
-/* Compact Interactive Voice Header Pill in Conversation Mode */
+.main-stage.has-conversation .chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+    margin-top: auto; /* Eliminates the awkward empty bottom gap when messages are few */
+}
+
+/* Central Holographic AI Orb visualizer stays prominently visible in Conversation Mode */
 .main-stage.has-conversation .orb-stage-wrapper {
-    flex-direction: row;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.65rem;
-    margin: 0.2rem auto 0.4rem auto;
-    padding: 0.25rem 0.85rem;
-    background: rgba(13, 17, 26, 0.75);
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    cursor: pointer;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    flex-shrink: 0;
-    transition: all 0.25s ease;
-}
-
-.main-stage.has-conversation .orb-stage-wrapper:hover {
-    background: rgba(22, 28, 45, 0.85);
-    border-color: rgba(56, 189, 248, 0.35);
-}
-
-.main-stage.has-conversation .status-container {
-    margin-bottom: 0;
-    padding: 0;
+    margin: 0.25rem auto 0.35rem auto;
+    padding: 0.15rem;
     background: transparent;
     border: none;
     backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.main-stage.has-conversation .status-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+    padding: 0.25rem 0.85rem;
+    background: rgba(13, 17, 26, 0.65);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
 .main-stage.has-conversation .status-text {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--text-secondary);
 }
 
 .main-stage.has-conversation .orb-visualizer-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
     width: auto;
     max-width: none;
 }
 
 .main-stage.has-conversation .orb-container {
-    width: 30px;
-    height: 30px;
-    min-width: 30px;
-    min-height: 30px;
+    width: 95px;
+    height: 95px;
+    min-width: 95px;
+    min-height: 95px;
     margin-bottom: 0;
+    position: relative;
 }
 
 .main-stage.has-conversation .orb-pink-glow {
-    display: none;
+    display: block;
+    width: 110px;
+    height: 110px;
+    filter: blur(24px);
+    opacity: 0.6;
 }
 
 .main-stage.has-conversation .orb-wrapper {
-    width: 30px;
-    height: 30px;
+    width: 95px;
+    height: 95px;
 }
 
 .main-stage.has-conversation .orb-core {
-    width: 18px;
-    height: 18px;
+    width: 56px;
+    height: 56px;
 }
 
 .main-stage.has-conversation .gyro-ring-1 {
-    inset: -3px;
+    inset: -6px;
+    display: block;
 }
 
 .main-stage.has-conversation .gyro-ring-2 {
-    inset: -1px;
+    inset: -3px;
+    display: block;
 }
 
 .main-stage.has-conversation .orb-ring {
-    display: none;
+    display: block;
 }
 
 .main-stage.has-conversation .soundwave-wing {
-    display: none !important;
+    display: flex !important;
+    align-items: center;
+    gap: 3px;
+    height: 32px;
+    opacity: 0.85;
 }
 
 /* Prompt Deck Overlay when toggled via ✨ button in conversation mode */
@@ -2498,10 +2528,47 @@ body {
     }
     .main-stage.has-conversation .orb-stage-wrapper {
         flex: 0 0 auto;
-        margin: 0.2rem auto 0.4rem auto;
+        margin: 0.15rem auto 0.25rem auto;
+        padding: 0;
+    }
+    .main-stage.has-conversation .orb-container {
+        width: 76px;
+        height: 76px;
+        min-width: 76px;
+        min-height: 76px;
+    }
+    .main-stage.has-conversation .orb-wrapper {
+        width: 76px;
+        height: 76px;
+    }
+    .main-stage.has-conversation .orb-core {
+        width: 44px;
+        height: 44px;
+    }
+    .main-stage.has-conversation .orb-pink-glow {
+        display: block;
+        width: 86px;
+        height: 86px;
+        filter: blur(16px);
+        opacity: 0.55;
+    }
+    .main-stage.has-conversation .gyro-ring-1 {
+        inset: -4px;
+        display: block;
+    }
+    .main-stage.has-conversation .gyro-ring-2 {
+        inset: -2px;
+        display: block;
+    }
+    .main-stage.has-conversation .orb-ring {
+        display: block;
+    }
+    .main-stage.has-conversation .transcript-history-container {
+        padding: 0.2rem 0.25rem;
+        margin-bottom: 0.2rem;
     }
     .status-container {
-        margin-bottom: 0.6rem;
+        margin-bottom: 0.4rem;
     }
     .soundwave-wing {
         display: none !important;

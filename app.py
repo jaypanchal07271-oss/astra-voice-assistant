@@ -413,16 +413,16 @@ async def handle_chat(req: ChatRequest, request: Request):
     except Exception as e:
         logger.error(f"Critical error in process_voice_command: {e}")
         brain_result = {
-            "reply": "Kshama karein, takneeki kharabi ke karan command execute nahi ho paayi.",
+            "reply": "Sorry (Kshama karein), a technical error prevented this command from completing.",
             "action": {"status": "error", "error": str(e)}
         }
-    reply_text = brain_result.get("reply", "Kaam ho gaya hai.")
+    reply_text = brain_result.get("reply", "Task completed successfully.")
     action_info = brain_result.get("action")
 
     # 2. Convert response to spoken audio via Edge-TTS
     audio_url = None
     tts_error = False
-    req_lang = req.lang or "hi-IN"
+    req_lang = req.lang or "en-IN"
     try:
         raw_audio_url = await asyncio.wait_for(
             generate_audio(reply_text, lang=req_lang),
@@ -812,16 +812,16 @@ async def handle_voice_upload(
         except Exception as e:
             logger.error(f"Critical error in voice upload process_voice_command: {e}")
             brain_result = {
-                "reply": "Kshama karein, takneeki kharabi ke karan command execute nahi ho paayi.",
+                "reply": "Sorry (Kshama karein), a technical error prevented this command from completing.",
                 "action": {"status": "error", "error": str(e)}
             }
-        reply_text = brain_result.get("reply", "Kaam kar diya gaya hai.")
+        reply_text = brain_result.get("reply", "Task completed successfully.")
         action_info = brain_result.get("action")
 
         # Convert to audio via Edge-TTS
         audio_url = None
         tts_error = False
-        target_lang = lang or "hi-IN"
+        target_lang = lang or "en-IN"
         try:
             raw_audio_url = await asyncio.wait_for(
                 generate_audio(reply_text, lang=target_lang),
